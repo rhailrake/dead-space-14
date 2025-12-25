@@ -22,6 +22,14 @@ public enum PurchasePeriod : byte
 }
 
 [Serializable, NetSerializable]
+public enum CalendarRewardStatus : byte
+{
+    Locked,
+    Available,
+    Claimed
+}
+
+[Serializable, NetSerializable]
 public sealed class DonateShopState
 {
     public string PlayerUserName { get; set; } = "Unknown";
@@ -308,6 +316,132 @@ public sealed class PurchaseResult
 }
 
 [Serializable, NetSerializable]
+public sealed class CalendarRewardItemData
+{
+    public int Id { get; }
+    public string Name { get; }
+    public string? ItemIdInGame { get; }
+    public bool Owned { get; }
+
+    public CalendarRewardItemData(int id, string name, string? itemIdInGame, bool owned)
+    {
+        Id = id;
+        Name = name;
+        ItemIdInGame = itemIdInGame;
+        Owned = owned;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class CalendarDayReward
+{
+    public int Day { get; }
+    public CalendarRewardStatus Status { get; }
+    public CalendarRewardItemData Item { get; }
+
+    public CalendarDayReward(int day, CalendarRewardStatus status, CalendarRewardItemData item)
+    {
+        Day = day;
+        Status = status;
+        Item = item;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class CalendarPreviewDay
+{
+    public CalendarRewardItemData? Item { get; }
+    public CalendarRewardStatus Status { get; }
+
+    public CalendarPreviewDay(CalendarRewardItemData? item, CalendarRewardStatus status)
+    {
+        Item = item;
+        Status = status;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class CalendarPreview
+{
+    public CalendarPreviewDay? Yesterday { get; }
+    public CalendarPreviewDay? Today { get; }
+    public CalendarPreviewDay? Tomorrow { get; }
+
+    public CalendarPreview(CalendarPreviewDay? yesterday, CalendarPreviewDay? today, CalendarPreviewDay? tomorrow)
+    {
+        Yesterday = yesterday;
+        Today = today;
+        Tomorrow = tomorrow;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class CalendarProgress
+{
+    public int CurrentDay { get; }
+    public int PoolId { get; }
+
+    public CalendarProgress(int currentDay, int poolId)
+    {
+        CurrentDay = currentDay;
+        PoolId = poolId;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class DailyCalendarState
+{
+    public List<CalendarDayReward> NormalRewards { get; }
+    public List<CalendarDayReward> PremiumRewards { get; }
+    public CalendarPreview? NormalPreview { get; }
+    public CalendarPreview? PremiumPreview { get; }
+    public CalendarProgress? Progress { get; }
+    public bool HasError { get; }
+    public string ErrorMessage { get; }
+
+    public DailyCalendarState(
+        List<CalendarDayReward> normalRewards,
+        List<CalendarDayReward> premiumRewards,
+        CalendarPreview? normalPreview,
+        CalendarPreview? premiumPreview,
+        CalendarProgress? progress)
+    {
+        NormalRewards = normalRewards;
+        PremiumRewards = premiumRewards;
+        NormalPreview = normalPreview;
+        PremiumPreview = premiumPreview;
+        Progress = progress;
+        HasError = false;
+        ErrorMessage = string.Empty;
+    }
+
+    public DailyCalendarState(string errorMessage)
+    {
+        NormalRewards = new List<CalendarDayReward>();
+        PremiumRewards = new List<CalendarDayReward>();
+        HasError = true;
+        ErrorMessage = errorMessage;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class ClaimRewardResult
+{
+    public bool Success { get; }
+    public string Message { get; }
+    public CalendarRewardItemData? ClaimedItem { get; }
+    public bool IsPremium { get; }
+
+    public ClaimRewardResult(bool success, string message, CalendarRewardItemData? claimedItem = null, bool isPremium = false)
+    {
+        Success = success;
+        Message = message;
+        ClaimedItem = claimedItem;
+        IsPremium = isPremium;
+    }
+}
+
+[Serializable, NetSerializable]
 public sealed class RequestUpdateDonateShop : EntityEventArgs;
 
 [Serializable, NetSerializable]
@@ -368,6 +502,44 @@ public sealed class PurchaseEnergyItemResult : EntityEventArgs
     public PurchaseResult Result { get; }
 
     public PurchaseEnergyItemResult(PurchaseResult result)
+    {
+        Result = result;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class RequestDailyCalendar : EntityEventArgs;
+
+[Serializable, NetSerializable]
+public sealed class UpdateDailyCalendarState : EntityEventArgs
+{
+    public DailyCalendarState State { get; }
+
+    public UpdateDailyCalendarState(DailyCalendarState state)
+    {
+        State = state;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class RequestClaimCalendarReward : EntityEventArgs
+{
+    public int RewardId { get; }
+    public bool IsPremium { get; }
+
+    public RequestClaimCalendarReward(int rewardId, bool isPremium)
+    {
+        RewardId = rewardId;
+        IsPremium = isPremium;
+    }
+}
+
+[Serializable, NetSerializable]
+public sealed class ClaimCalendarRewardResult : EntityEventArgs
+{
+    public ClaimRewardResult Result { get; }
+
+    public ClaimCalendarRewardResult(ClaimRewardResult result)
     {
         Result = result;
     }

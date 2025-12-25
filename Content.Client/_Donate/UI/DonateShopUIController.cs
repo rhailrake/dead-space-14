@@ -58,12 +58,28 @@ public sealed class DonateShopUIController : UIController
         _donateShopWindow.ApplyEnergyShopState(state);
     }
 
+    public void UpdateCalendarState(DailyCalendarState state)
+    {
+        if (_donateShopWindow == null)
+            return;
+
+        _donateShopWindow.ApplyCalendarState(state);
+    }
+
     public void HandlePurchaseResult(PurchaseResult result)
     {
         if (_donateShopWindow == null)
             return;
 
         _donateShopWindow.ShowPurchaseResult(result);
+    }
+
+    public void HandleClaimResult(ClaimRewardResult result)
+    {
+        if (_donateShopWindow == null)
+            return;
+
+        _donateShopWindow.ShowClaimResult(result);
     }
 
     public void ToggleWindow()

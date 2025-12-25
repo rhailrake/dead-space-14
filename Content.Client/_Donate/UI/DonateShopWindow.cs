@@ -17,12 +17,14 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private enum Tab
     {
         Profile,
+        Calendar,
         Inventory,
         Shop
     }
 
     private DonateShopState? _state;
     private EnergyShopState? _energyShopState;
+    private DailyCalendarState? _calendarState;
     private string? _currentCategory;
     private string? _currentShopCategory;
     private List<string> _categories = new();
@@ -38,11 +40,13 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private Control _tabsContainer = default!;
 
     private EmeraldButton _profileTabButton = default!;
+    private EmeraldButton _calendarTabButton = default!;
     private EmeraldButton _inventoryTabButton = default!;
     private EmeraldButton _shopTabButton = default!;
 
     private BoxContainer _contentContainer = default!;
     private Control _profileContent = default!;
+    private Control _calendarContent = default!;
     private Control _inventoryContent = default!;
     private Control _shopContent = default!;
 
@@ -61,6 +65,11 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private string _shopSearchQuery = "";
     private bool _shopLoading;
     private bool _isPurchasing;
+
+    private BoxContainer _calendarPanel = default!;
+    private bool _calendarLoading;
+    private bool _isClaimingReward;
+    private EmeraldRewardClaimPopup? _rewardPopup;
 
     public DonateShopWindow()
     {
@@ -103,6 +112,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         mainContainer.AddChild(_contentContainer);
 
         _profileContent = BuildProfileContent();
+        _calendarContent = BuildCalendarContent();
         _inventoryContent = BuildInventoryContent();
         _shopContent = BuildShopContent();
 
@@ -238,6 +248,14 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         _profileTabButton.OnPressed += () => SwitchTab(Tab.Profile);
         container.AddChild(_profileTabButton);
 
+        _calendarTabButton = new EmeraldButton
+        {
+            Text = "КАЛЕНДАРЬ",
+            HorizontalExpand = true
+        };
+        _calendarTabButton.OnPressed += () => SwitchTab(Tab.Calendar);
+        container.AddChild(_calendarTabButton);
+
         _inventoryTabButton = new EmeraldButton
         {
             Text = "ИНВЕНТАРЬ",
@@ -275,6 +293,27 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         };
 
         scrollContainer.SetContent(_profilePanel);
+        return scrollContainer;
+    }
+
+    private Control BuildCalendarContent()
+    {
+        var scrollContainer = new EmeraldScrollContainer
+        {
+            HorizontalExpand = true,
+            VerticalExpand = true
+        };
+
+        _calendarPanel = new BoxContainer
+        {
+            Orientation = BoxContainer.LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+            SeparationOverride = 16,
+            Margin = new Thickness(2)
+        };
+
+        scrollContainer.SetContent(_calendarPanel);
         return scrollContainer;
     }
 
@@ -387,6 +426,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private void SwitchTab(Tab tab)
     {
         _profileTabButton.IsActive = tab == Tab.Profile;
+        _calendarTabButton.IsActive = tab == Tab.Calendar;
         _inventoryTabButton.IsActive = tab == Tab.Inventory;
         _shopTabButton.IsActive = tab == Tab.Shop;
 
@@ -396,6 +436,15 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         {
             case Tab.Profile:
                 _contentContainer.AddChild(_profileContent);
+                break;
+            case Tab.Calendar:
+                _contentContainer.AddChild(_calendarContent);
+                if (_calendarState == null && !_calendarLoading)
+                {
+                    _calendarLoading = true;
+                    ShowCalendarLoading();
+                    _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestDailyCalendar());
+                }
                 break;
             case Tab.Inventory:
                 _contentContainer.AddChild(_inventoryContent);
@@ -410,6 +459,31 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 }
                 break;
         }
+    }
+
+    private void ShowCalendarLoading()
+    {
+        _calendarPanel.RemoveAllChildren();
+
+        var container = new BoxContainer
+        {
+            Orientation = BoxContainer.LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+            HorizontalAlignment = HAlignment.Center,
+            VerticalAlignment = VAlignment.Center,
+            SeparationOverride = 12
+        };
+
+        var loadingLabel = new EmeraldLabel
+        {
+            Text = "ЗАГРУЗКА КАЛЕНДАРЯ...",
+            HorizontalAlignment = HAlignment.Center,
+            Alignment = EmeraldLabel.TextAlignment.Center
+        };
+        container.AddChild(loadingLabel);
+
+        _calendarPanel.AddChild(container);
     }
 
     private void ShowShopLoading()
@@ -487,6 +561,249 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         }
 
         UpdateShopContent(state);
+    }
+
+    public void ApplyCalendarState(DailyCalendarState state)
+    {
+        _calendarState = state;
+        _calendarLoading = false;
+
+        if (state.HasError)
+        {
+            ShowCalendarError(state.ErrorMessage);
+            return;
+        }
+
+        UpdateCalendarContent(state);
+    }
+
+    public void ShowClaimResult(ClaimRewardResult result)
+    {
+        _isClaimingReward = false;
+
+        if (_rewardPopup != null)
+        {
+            _rewardPopup.Parent?.RemoveChild(_rewardPopup);
+            _rewardPopup = null;
+        }
+
+        _rewardPopup = new EmeraldRewardClaimPopup
+        {
+            IsSuccess = result.Success,
+            Message = result.Message,
+            ItemName = result.ClaimedItem?.Name ?? "Unknown",
+            ProtoId = result.ClaimedItem?.ItemIdInGame,
+            IsPremium = result.IsPremium
+        };
+
+        _rewardPopup.OnClose += () =>
+        {
+            _rewardPopup?.Parent?.RemoveChild(_rewardPopup);
+            _rewardPopup = null;
+
+            if (result.Success)
+            {
+                _calendarState = null;
+                _calendarLoading = true;
+                ShowCalendarLoading();
+                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestDailyCalendar());
+                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
+            }
+        };
+
+        UserInterfaceManager.WindowRoot.AddChild(_rewardPopup);
+
+        var centerX = (UserInterfaceManager.WindowRoot.Size.X - 320) / 2f;
+        var centerY = (UserInterfaceManager.WindowRoot.Size.Y - 420) / 2f;
+        LayoutContainer.SetPosition(_rewardPopup, new Vector2(centerX, centerY));
+    }
+
+    private void ShowCalendarError(string message)
+    {
+        _calendarPanel.RemoveAllChildren();
+
+        var container = new BoxContainer
+        {
+            Orientation = BoxContainer.LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+            HorizontalAlignment = HAlignment.Center,
+            VerticalAlignment = VAlignment.Center,
+            SeparationOverride = 16
+        };
+
+        var title = new EmeraldLabel
+        {
+            Text = "ОШИБКА КАЛЕНДАРЯ",
+            TextColor = Color.FromHex("#ff6b6b"),
+            HorizontalAlignment = HAlignment.Center,
+            Alignment = EmeraldLabel.TextAlignment.Center
+        };
+        container.AddChild(title);
+
+        var errorLabel = new EmeraldLabel
+        {
+            Text = message,
+            HorizontalAlignment = HAlignment.Center,
+            Alignment = EmeraldLabel.TextAlignment.Center
+        };
+        container.AddChild(errorLabel);
+
+        var retryButton = new EmeraldButton
+        {
+            Text = "ПОПРОБОВАТЬ СНОВА",
+            MinSize = new Vector2(220, 40),
+            HorizontalAlignment = HAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+
+        retryButton.OnPressed += () =>
+        {
+            _calendarLoading = true;
+            ShowCalendarLoading();
+            _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestDailyCalendar());
+        };
+        container.AddChild(retryButton);
+
+        _calendarPanel.AddChild(container);
+    }
+
+    private void UpdateCalendarContent(DailyCalendarState state)
+    {
+        _calendarPanel.RemoveAllChildren();
+
+        var currentDay = state.Progress?.CurrentDay ?? 1;
+        var totalDays = Math.Max(state.NormalRewards.Count, state.PremiumRewards.Count);
+        if (totalDays == 0) totalDays = 7;
+
+        var hasPremium = _state?.CurrentPremium?.Active ?? false;
+
+        var normalHeader = new EmeraldCalendarHeader
+        {
+            CurrentDay = currentDay,
+            TotalDays = totalDays,
+            IsPremiumTrack = false,
+            HorizontalExpand = true
+        };
+        _calendarPanel.AddChild(normalHeader);
+
+        if (state.NormalPreview?.Today != null)
+        {
+            var todayCard = new EmeraldTodayRewardCard
+            {
+                ItemName = state.NormalPreview.Today.Item?.Name ?? "Unknown",
+                StatusText = state.NormalPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО ДЛЯ ПОЛУЧЕНИЯ" : "УЖЕ ПОЛУЧЕНО",
+                IsAvailable = state.NormalPreview.Today.Status == CalendarRewardStatus.Available,
+                IsPremium = false,
+                HorizontalExpand = true
+            };
+            _calendarPanel.AddChild(todayCard);
+        }
+
+        var normalGrid = new GridContainer
+        {
+            Columns = CalculateCalendarColumns(),
+            HorizontalExpand = true,
+            HSeparationOverride = 8,
+            VSeparationOverride = 8
+        };
+
+        foreach (var reward in state.NormalRewards)
+        {
+            var dayCard = new EmeraldCalendarDayCard
+            {
+                Day = reward.Day,
+                ItemName = reward.Item.Name,
+                ProtoId = reward.Item.ItemIdInGame,
+                ItemId = reward.Item.Id,
+                Status = reward.Status,
+                IsPremium = false,
+                IsCurrentDay = reward.Day == currentDay
+            };
+
+            dayCard.OnClaimRequest += (itemId, isPremium) =>
+            {
+                if (_isClaimingReward) return;
+                _isClaimingReward = true;
+                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(itemId, isPremium));
+            };
+
+            normalGrid.AddChild(dayCard);
+        }
+
+        _calendarPanel.AddChild(normalGrid);
+
+        _calendarPanel.AddChild(new Control { MinHeight = 20 });
+
+        var premiumHeader = new EmeraldCalendarHeader
+        {
+            CurrentDay = currentDay,
+            TotalDays = totalDays,
+            IsPremiumTrack = true,
+            HorizontalExpand = true
+        };
+        _calendarPanel.AddChild(premiumHeader);
+
+        if (!hasPremium)
+        {
+            var lockedCard = new EmeraldPremiumLockedCard
+            {
+                HorizontalExpand = true
+            };
+            lockedCard.OnBuyPremiumPressed += () =>
+            {
+                _url.OpenUri("https://deadspace14.net");
+            };
+            _calendarPanel.AddChild(lockedCard);
+        }
+        else
+        {
+            if (state.PremiumPreview?.Today != null)
+            {
+                var todayPremiumCard = new EmeraldTodayRewardCard
+                {
+                    ItemName = state.PremiumPreview.Today.Item?.Name ?? "Unknown",
+                    StatusText = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО ДЛЯ ПОЛУЧЕНИЯ" : "УЖЕ ПОЛУЧЕНО",
+                    IsAvailable = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available,
+                    IsPremium = true,
+                    HorizontalExpand = true
+                };
+                _calendarPanel.AddChild(todayPremiumCard);
+            }
+
+            var premiumGrid = new GridContainer
+            {
+                Columns = CalculateCalendarColumns(),
+                HorizontalExpand = true,
+                HSeparationOverride = 8,
+                VSeparationOverride = 8
+            };
+
+            foreach (var reward in state.PremiumRewards)
+            {
+                var dayCard = new EmeraldCalendarDayCard
+                {
+                    Day = reward.Day,
+                    ItemName = reward.Item.Name,
+                    ProtoId = reward.Item.ItemIdInGame,
+                    ItemId = reward.Item.Id,
+                    Status = reward.Status,
+                    IsPremium = true,
+                    IsCurrentDay = reward.Day == currentDay
+                };
+
+                dayCard.OnClaimRequest += (itemId, isPremium) =>
+                {
+                    if (_isClaimingReward) return;
+                    _isClaimingReward = true;
+                    _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(itemId, isPremium));
+                };
+
+                premiumGrid.AddChild(dayCard);
+            }
+
+            _calendarPanel.AddChild(premiumGrid);
+        }
     }
 
     public void ShowPurchaseResult(PurchaseResult result)
@@ -1149,6 +1466,18 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         var columns = (int)((availableWidth + spacing) / (perkWidth + spacing));
 
         return Math.Max(1, columns);
+    }
+
+    private int CalculateCalendarColumns()
+    {
+        const float cardWidth = 100f;
+        const float spacing = 8f;
+        const float padding = 20f;
+
+        var availableWidth = Size.X - padding;
+        var columns = (int)((availableWidth + spacing) / (cardWidth + spacing));
+
+        return Math.Max(1, Math.Min(7, columns));
     }
 
     protected override void Resized()
