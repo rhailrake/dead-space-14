@@ -30,6 +30,7 @@ public sealed class EmeraldRewardResultDisplay : Control
     private bool _isPremium;
     private bool _isSuccess;
     private string _message = "";
+    private bool _isLootbox;
 
     private float _animationProgress;
     private float _particleTime;
@@ -44,11 +45,13 @@ public sealed class EmeraldRewardResultDisplay : Control
     private readonly Color _textColor = Color.FromHex("#c0b3da");
     private readonly Color _particleColor = Color.FromHex("#00FFAA");
     private readonly Color _premiumParticleColor = Color.FromHex("#ffd700");
+    private readonly Color _lootboxColor = Color.FromHex("#ffd700");
 
     private SpriteView? _spriteView;
     private TextureRect? _textureRect;
     private PanelContainer? _spriteContainer;
     private Texture? _fallbackTexture;
+    private Texture? _lootboxTexture;
     private EmeraldButton? _closeButton;
 
     public event Action? OnClosePressed;
@@ -99,6 +102,17 @@ public sealed class EmeraldRewardResultDisplay : Control
         set
         {
             _message = value;
+            InvalidateMeasure();
+        }
+    }
+
+    public bool IsLootbox
+    {
+        get => _isLootbox;
+        set
+        {
+            _isLootbox = value;
+            UpdateSprite();
             InvalidateMeasure();
         }
     }
@@ -179,6 +193,34 @@ public sealed class EmeraldRewardResultDisplay : Control
     {
         if (_spriteView == null || _textureRect == null)
             return;
+
+        if (_isLootbox)
+        {
+            _spriteView.Visible = false;
+            _textureRect.Visible = true;
+
+            if (_lootboxTexture == null)
+            {
+                try
+                {
+                    _lootboxTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/lootbox.png").Texture;
+                }
+                catch
+                {
+                    try
+                    {
+                        _lootboxTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/giftbox.png").Texture;
+                    }
+                    catch
+                    {
+                        _lootboxTexture = null;
+                    }
+                }
+            }
+
+            _textureRect.Texture = _lootboxTexture;
+            return;
+        }
 
         if (!string.IsNullOrEmpty(_protoId) && _protoManager.HasIndex<EntityPrototype>(_protoId))
         {
@@ -293,7 +335,7 @@ public sealed class EmeraldRewardResultDisplay : Control
         var rect = new UIBox2(0, 0, PixelSize.X, PixelSize.Y);
         handle.DrawRect(rect, _bgColor.WithAlpha(0.95f));
 
-        var pColor = _isPremium ? _premiumParticleColor : _particleColor;
+        var pColor = _isLootbox ? _lootboxColor : _isPremium ? _premiumParticleColor : _particleColor;
         foreach (var p in _particles)
         {
             if (p.Alpha <= 0f) continue;
@@ -307,7 +349,7 @@ public sealed class EmeraldRewardResultDisplay : Control
                 pColor.WithAlpha(p.Alpha));
         }
 
-        var accent = _isPremium ? _premiumColor : _isSuccess ? _successColor : _errorColor;
+        var accent = _isLootbox ? _lootboxColor : _isPremium ? _premiumColor : _isSuccess ? _successColor : _errorColor;
 
         var scale = 0.5f + _animationProgress * 0.5f;
         var title = _isSuccess ? "НАГРАДА ПОЛУЧЕНА!" : "ОШИБКА";
@@ -319,9 +361,10 @@ public sealed class EmeraldRewardResultDisplay : Control
 
         var nameY = 185f * UIScale;
         var nameWidth = GetTextWidth(_itemName, _nameFont);
+        var nameColor = _isLootbox ? _lootboxColor : _textColor;
         handle.DrawString(_nameFont,
             new Vector2((PixelSize.X - nameWidth) / 2f, nameY),
-            _itemName, UIScale, _textColor);
+            _itemName, UIScale, nameColor);
     }
 
     private float GetTextWidth(string text, Font font)

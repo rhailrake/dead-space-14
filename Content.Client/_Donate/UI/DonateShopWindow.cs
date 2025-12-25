@@ -607,6 +607,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             ItemName = result.ClaimedItem?.Name ?? "Unknown",
             ProtoId = result.ClaimedItem?.ItemIdInGame,
             IsPremium = result.IsPremium,
+            IsLootbox = result.ClaimedItem?.IsLootbox ?? false,
             HorizontalAlignment = HAlignment.Center
         };
 
@@ -736,7 +737,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 Status = reward.Status,
                 IsPremium = false,
                 IsCurrentDay = reward.Day == currentDay,
-                IsHidden = reward.Item.IsHidden
+                IsHidden = reward.Item.IsHidden,
+                IsLootbox = reward.Item.IsLootbox
             };
 
             dayCard.OnClaimRequest += (rewardId, isPremium) =>
@@ -808,6 +810,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 IsPremium = true,
                 IsCurrentDay = reward.Day == currentDay,
                 IsHidden = reward.Item.IsHidden,
+                IsLootbox = reward.Item.IsLootbox,
                 IsLocked = !hasPremium
             };
 
@@ -1339,7 +1342,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 IsActive = item.IsActive,
                 IsSpawned = _state.SpawnedItems.Contains(item.ItemIdInGame ?? ""),
                 IsTimeUp = _state.IsTimeUp,
-                SourceSubscription = item.SourceSubscription
+                SourceSubscription = item.SourceSubscription,
+                IsLootbox = item.IsLootbox
             };
 
             itemCard.OnSpawnRequest += protoId =>

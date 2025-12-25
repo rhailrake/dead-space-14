@@ -35,6 +35,7 @@ public sealed class EmeraldCalendarDayCard : Control
     private bool _isCurrentDay;
     private bool _hovered;
     private bool _isHidden;
+    private bool _isLootbox;
 
     private readonly Color _bgColor = Color.FromHex("#1a0f2e");
     private readonly Color _borderColor = Color.FromHex("#4a3a6a");
@@ -49,12 +50,14 @@ public sealed class EmeraldCalendarDayCard : Control
     private readonly Color _spriteBgColor = Color.FromHex("#0f0a1e");
     private readonly Color _hoverGlowColor = Color.FromHex("#6d5a8a");
     private readonly Color _lockedOverlayColor = Color.FromHex("#0f0a1e");
+    private readonly Color _lootboxColor = Color.FromHex("#ffd700");
 
     private SpriteView? _spriteView;
     private TextureRect? _textureRect;
     private EmeraldPanel? _spriteContainer;
     private Texture? _fallbackTexture;
     private Texture? _lockTexture;
+    private Texture? _lootboxTexture;
 
     public event Action<int, bool>? OnClaimRequest;
 
@@ -147,6 +150,17 @@ public sealed class EmeraldCalendarDayCard : Control
         }
     }
 
+    public bool IsLootbox
+    {
+        get => _isLootbox;
+        set
+        {
+            _isLootbox = value;
+            UpdateSprite();
+            InvalidateMeasure();
+        }
+    }
+
     public EmeraldCalendarDayCard()
     {
         IoCManager.InjectDependencies(this);
@@ -218,6 +232,34 @@ public sealed class EmeraldCalendarDayCard : Control
             }
 
             _textureRect.Texture = _fallbackTexture;
+            return;
+        }
+
+        if (_isLootbox)
+        {
+            _spriteView.Visible = false;
+            _textureRect.Visible = true;
+
+            if (_lootboxTexture == null)
+            {
+                try
+                {
+                    _lootboxTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/lootbox.png").Texture;
+                }
+                catch
+                {
+                    try
+                    {
+                        _lootboxTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/giftbox.png").Texture;
+                    }
+                    catch
+                    {
+                        _lootboxTexture = null;
+                    }
+                }
+            }
+
+            _textureRect.Texture = _lootboxTexture;
             return;
         }
 
@@ -303,7 +345,7 @@ public sealed class EmeraldCalendarDayCard : Control
                          _status == CalendarRewardStatus.Claimed ? _claimedColor :
                          _borderColor;
 
-        var borderThickness = (_isCurrentDay || _isPremium) ? 2f * UIScale : 1f * UIScale;
+        var borderThickness = (_isCurrentDay || _isPremium || _isLootbox) ? 2f * UIScale : 1f * UIScale;
         DrawBorder(handle, rect, borderColor, borderThickness);
 
         var dayText = $"ДЕНЬ {_day}";
@@ -311,7 +353,8 @@ public sealed class EmeraldCalendarDayCard : Control
         var dayX = (PixelSize.X - dayWidth) / 2f;
         var dayY = 4f * UIScale;
 
-        var dayTextColor = _isPremium ? _premiumColor :
+        var dayTextColor = _isLootbox ? _lootboxColor :
+                          _isPremium ? _premiumColor :
                           _status == CalendarRewardStatus.Available ? _availableColor :
                           _status == CalendarRewardStatus.Claimed ? _claimedColor :
                           _dayColor;
@@ -324,7 +367,8 @@ public sealed class EmeraldCalendarDayCard : Control
         var nameWidth = GetTextWidth(displayName, _nameFont);
         var nameX = (PixelSize.X - nameWidth) / 2f;
 
-        var nameTextColor = _status == CalendarRewardStatus.Locked ? _lockedColor : _nameColor;
+        var nameTextColor = _isLootbox ? _lootboxColor :
+                           _status == CalendarRewardStatus.Locked ? _lockedColor : _nameColor;
         handle.DrawString(_nameFont, new Vector2(nameX, nameY), displayName, UIScale, nameTextColor);
 
         var statusY = nameY + _nameFont.GetLineHeight(UIScale) + 2f * UIScale;

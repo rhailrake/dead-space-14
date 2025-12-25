@@ -135,6 +135,9 @@ public sealed class DonateItemData
     public int CrystalPrice { get; }
     public int EnergyPrice { get; }
     public string? SourceSubscription { get; }
+    public bool IsLootbox { get; }
+    public string? LootboxRarity { get; }
+    public bool StelsHidden { get; }
 
     public DonateItemData(
         int itemId,
@@ -150,7 +153,10 @@ public sealed class DonateItemData
         int coinPrice = 0,
         int crystalPrice = 0,
         int energyPrice = 0,
-        string? sourceSubscription = null)
+        string? sourceSubscription = null,
+        bool isLootbox = false,
+        string? lootboxRarity = null,
+        bool stelsHidden = false)
     {
         ItemId = itemId;
         ItemName = itemName;
@@ -166,6 +172,9 @@ public sealed class DonateItemData
         CrystalPrice = crystalPrice;
         EnergyPrice = energyPrice;
         SourceSubscription = sourceSubscription;
+        IsLootbox = isLootbox;
+        LootboxRarity = lootboxRarity;
+        StelsHidden = stelsHidden;
     }
 }
 
@@ -324,8 +333,9 @@ public sealed class CalendarRewardItemData
     public bool Owned { get; }
     public int RewardId { get; }
     public bool IsHidden { get; }
+    public bool IsLootbox { get; }
 
-    public CalendarRewardItemData(int id, string name, string? itemIdInGame, bool owned, int rewardId = 0, bool isHidden = false)
+    public CalendarRewardItemData(int id, string name, string? itemIdInGame, bool owned, int rewardId = 0, bool isHidden = false, bool isLootbox = false)
     {
         Id = id;
         Name = name;
@@ -333,6 +343,7 @@ public sealed class CalendarRewardItemData
         Owned = owned;
         RewardId = rewardId;
         IsHidden = isHidden;
+        IsLootbox = isLootbox;
     }
 }
 

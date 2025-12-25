@@ -33,6 +33,7 @@ public sealed class EmeraldItemCard : Control
     private bool _isSpawned;
     private bool _isTimeUp;
     private string? _sourceSubscription;
+    private bool _isLootbox;
 
     private readonly Color _bgColor = Color.FromHex("#1a0f2e");
     private readonly Color _borderColor = Color.FromHex("#4a3a6a");
@@ -46,11 +47,13 @@ public sealed class EmeraldItemCard : Control
     private readonly Color _subscriptionColor = Color.FromHex("#d4a574");
     private readonly Color _purchasedColor = Color.FromHex("#8d7aaa");
     private readonly Color _adminColor = Color.FromHex("#FF0000");
+    private readonly Color _lootboxColor = Color.FromHex("#ffd700");
 
     private SpriteView? _spriteView;
     private TextureRect? _textureRect;
     private PanelContainer? _spriteContainer;
     private Texture? _fallbackTexture;
+    private Texture? _lootboxTexture;
     private bool _hovered;
 
     public event Action<string>? OnSpawnRequest;
@@ -135,6 +138,17 @@ public sealed class EmeraldItemCard : Control
         }
     }
 
+    public bool IsLootbox
+    {
+        get => _isLootbox;
+        set
+        {
+            _isLootbox = value;
+            UpdateSprite();
+            InvalidateMeasure();
+        }
+    }
+
     public bool IsFromSubscription => SourceSubscription != null;
 
     public EmeraldItemCard()
@@ -185,6 +199,34 @@ public sealed class EmeraldItemCard : Control
     {
         if (_spriteView == null || _textureRect == null)
             return;
+
+        if (_isLootbox)
+        {
+            _spriteView.Visible = false;
+            _textureRect.Visible = true;
+
+            if (_lootboxTexture == null)
+            {
+                try
+                {
+                    _lootboxTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/lootbox.png").Texture;
+                }
+                catch
+                {
+                    try
+                    {
+                        _lootboxTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/giftbox.png").Texture;
+                    }
+                    catch
+                    {
+                        _lootboxTexture = null;
+                    }
+                }
+            }
+
+            _textureRect.Texture = _lootboxTexture;
+            return;
+        }
 
         if (!string.IsNullOrEmpty(_protoId) && _protoManager.HasIndex<EntityPrototype>(_protoId))
         {
@@ -243,7 +285,7 @@ public sealed class EmeraldItemCard : Control
         var bgAlpha = _isActive && !_isSpawned ? 0.8f : 0.5f;
         handle.DrawRect(rect, _bgColor.WithAlpha(bgAlpha));
 
-        if (_hovered && _isActive && !_isSpawned && !string.IsNullOrEmpty(_protoId))
+        if (_hovered && _isActive && !_isSpawned && !string.IsNullOrEmpty(_protoId) && !_isLootbox)
         {
             var glowOffset = 1f * UIScale;
             var glowRect = new UIBox2(rect.Left - glowOffset, rect.Top - glowOffset, rect.Right + glowOffset, rect.Bottom + glowOffset);
@@ -252,7 +294,8 @@ public sealed class EmeraldItemCard : Control
 
         var isAdmin = IsFromSubscription && (_sourceSubscription?.StartsWith("[ADMIN]") ?? false);
 
-        var borderColor = _isActive ? (isAdmin ? _adminColor : IsFromSubscription ? _subscriptionColor : _borderColor) :
+        var borderColor = _isLootbox ? _lootboxColor :
+            _isActive ? (isAdmin ? _adminColor : IsFromSubscription ? _subscriptionColor : _borderColor) :
             _isSpawned ? _spawnedColor :
             _inactiveColor;
 
@@ -266,7 +309,8 @@ public sealed class EmeraldItemCard : Control
         var nameY = 99f * UIScale;
         var lineHeight = _nameFont.GetLineHeight(UIScale);
 
-        var nameColor = _isActive ? (isAdmin ? _adminColor : IsFromSubscription ? _subscriptionColor : _nameColor) :
+        var nameColor = _isLootbox ? _lootboxColor :
+            _isActive ? (isAdmin ? _adminColor : IsFromSubscription ? _subscriptionColor : _nameColor) :
             _isSpawned ? _spawnedColor :
             _inactiveColor;
 
@@ -280,7 +324,15 @@ public sealed class EmeraldItemCard : Control
 
         var statusY = nameY + lines.Count * lineHeight + 4f * UIScale;
 
-        if (IsFromSubscription)
+        if (_isLootbox)
+        {
+            var lootboxText = "ЛУТБОКС";
+            var lootboxWidth = GetTextWidth(lootboxText, _sourceFont);
+            var lootboxX = (PixelSize.X - lootboxWidth) / 2f;
+            handle.DrawString(_sourceFont, new Vector2(lootboxX, statusY), lootboxText, UIScale, _lootboxColor);
+            statusY += _sourceFont.GetLineHeight(UIScale) + 2f * UIScale;
+        }
+        else if (IsFromSubscription)
         {
             var sourceText = _sourceSubscription!.ToUpper();
             var sourceWidth = GetTextWidth(sourceText, _sourceFont);
@@ -369,7 +421,7 @@ public sealed class EmeraldItemCard : Control
     protected override void MouseEntered()
     {
         base.MouseEntered();
-        if (!string.IsNullOrEmpty(_protoId) && _protoManager.HasIndex<EntityPrototype>(_protoId))
+        if (!string.IsNullOrEmpty(_protoId) && _protoManager.HasIndex<EntityPrototype>(_protoId) && !_isLootbox)
         {
             _hovered = true;
         }
@@ -388,6 +440,9 @@ public sealed class EmeraldItemCard : Control
         base.KeyBindDown(args);
 
         if (args.Function != EngineKeyFunctions.UIClick)
+            return;
+
+        if (_isLootbox)
             return;
 
         if (_isActive && !_isSpawned && !string.IsNullOrEmpty(_protoId) && _protoManager.HasIndex<EntityPrototype>(_protoId))
