@@ -157,7 +157,7 @@ public sealed class EmeraldCalendarDayCard : Control
         {
             HorizontalExpand = true,
             VerticalExpand = true,
-            Stretch = TextureRect.StretchMode.KeepAspectCentered,
+            Stretch = TextureRect.StretchMode.KeepCentered,
             Visible = false
         };
 

@@ -142,7 +142,7 @@ public sealed class EmeraldRewardClaimPopup : Control
         {
             HorizontalExpand = true,
             VerticalExpand = true,
-            Stretch = TextureRect.StretchMode.KeepAspectCentered,
+            Stretch = TextureRect.StretchMode.KeepCentered,
             Visible = false
         };
 

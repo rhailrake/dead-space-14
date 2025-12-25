@@ -139,7 +139,7 @@ public sealed class EmeraldShopItemCard : Control
         {
             HorizontalExpand = true,
             VerticalExpand = true,
-            Stretch = TextureRect.StretchMode.Scale,
+            Stretch = TextureRect.StretchMode.KeepCentered,
             Visible = false
         };
 
