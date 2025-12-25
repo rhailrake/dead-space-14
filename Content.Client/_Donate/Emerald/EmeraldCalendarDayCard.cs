@@ -29,7 +29,7 @@ public sealed class EmeraldCalendarDayCard : Control
     private int _day;
     private string _itemName = "";
     private string? _protoId;
-    private int _itemId;
+    private int _rewardId;
     private CalendarRewardStatus _status = CalendarRewardStatus.Locked;
     private bool _isPremium;
     private bool _isCurrentDay;
@@ -86,10 +86,10 @@ public sealed class EmeraldCalendarDayCard : Control
         }
     }
 
-    public int ItemId
+    public int RewardId
     {
-        get => _itemId;
-        set => _itemId = value;
+        get => _rewardId;
+        set => _rewardId = value;
     }
 
     public CalendarRewardStatus Status
@@ -393,7 +393,7 @@ public sealed class EmeraldCalendarDayCard : Control
         if (_status == CalendarRewardStatus.Available)
         {
             UserInterfaceManager.ClickSound();
-            OnClaimRequest?.Invoke(_itemId, _isPremium);
+            OnClaimRequest?.Invoke(_rewardId, _isPremium);
             args.Handle();
         }
     }

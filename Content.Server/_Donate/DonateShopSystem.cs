@@ -2,19 +2,19 @@
 
 using System.Linq;
 using System.Threading.Tasks;
+using Content.DeadSpace.Interfaces.Server;
 using Content.Server.GameTicking;
 using Content.Shared._Donate;
-using Content.DeadSpace.Interfaces.Server;
 using Content.Shared.GameTicking;
 using Content.Shared.Hands.EntitySystems;
-using Robust.Server.GameObjects;
-using Robust.Shared.Enums;
-using Robust.Shared.Player;
 using Content.Shared.Humanoid;
 using Content.Shared.Mobs.Systems;
-using Robust.Shared.Configuration;
-using Robust.Shared.Timing;
 using Content.Shared.Roles;
+using Robust.Server.GameObjects;
+using Robust.Shared.Configuration;
+using Robust.Shared.Enums;
+using Robust.Shared.Player;
+using Robust.Shared.Timing;
 
 namespace Content.Server._Donate;
 
@@ -281,7 +281,7 @@ public sealed class DonateShopSystem : EntitySystem
             return;
         }
 
-        var userId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
+        var userId = args.SenderSession.UserId.ToString();
         var state = await _donateApiService.FetchDailyCalendarAsync(userId);
 
         RaiseNetworkEvent(new UpdateDailyCalendarState(state), args.SenderSession.Channel);
@@ -300,7 +300,7 @@ public sealed class DonateShopSystem : EntitySystem
             return;
         }
 
-        var userId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
+        var userId = args.SenderSession.UserId.ToString();
         var result = await _donateApiService.ClaimCalendarRewardAsync(userId, msg.RewardId);
 
         RaiseNetworkEvent(new ClaimCalendarRewardResult(result), args.SenderSession.Channel);
@@ -363,7 +363,7 @@ public sealed class DonateShopSystem : EntitySystem
         if (_donateApiService == null)
             return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
 
-        var apiResponse = await _donateApiService!.FetchUserDataAsync("b6a6fd9b-1383-482e-a39f-814190fe231f");
+        var apiResponse = await _donateApiService.FetchUserDataAsync(userId);
 
         if (apiResponse == null)
             return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");

@@ -322,13 +322,15 @@ public sealed class CalendarRewardItemData
     public string Name { get; }
     public string? ItemIdInGame { get; }
     public bool Owned { get; }
+    public int RewardId { get; }
 
-    public CalendarRewardItemData(int id, string name, string? itemIdInGame, bool owned)
+    public CalendarRewardItemData(int id, string name, string? itemIdInGame, bool owned, int rewardId = 0)
     {
         Id = id;
         Name = name;
         ItemIdInGame = itemIdInGame;
         Owned = owned;
+        RewardId = rewardId;
     }
 }
 

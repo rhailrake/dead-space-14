@@ -715,17 +715,17 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 Day = reward.Day,
                 ItemName = reward.Item.Name,
                 ProtoId = reward.Item.ItemIdInGame,
-                ItemId = reward.RewardId,
+                RewardId = reward.RewardId,
                 Status = reward.Status,
                 IsPremium = false,
                 IsCurrentDay = reward.Day == currentDay
             };
 
-            dayCard.OnClaimRequest += (itemId, isPremium) =>
+            dayCard.OnClaimRequest += (rewardId, isPremium) =>
             {
                 if (_isClaimingReward) return;
                 _isClaimingReward = true;
-                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(itemId, isPremium));
+                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(rewardId, isPremium));
             };
 
             normalGrid.AddChild(dayCard);
@@ -786,17 +786,17 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                     Day = reward.Day,
                     ItemName = reward.Item.Name,
                     ProtoId = reward.Item.ItemIdInGame,
-                    ItemId = reward.RewardId,
+                    RewardId = reward.RewardId,
                     Status = reward.Status,
                     IsPremium = true,
                     IsCurrentDay = reward.Day == currentDay
                 };
 
-                dayCard.OnClaimRequest += (itemId, isPremium) =>
+                dayCard.OnClaimRequest += (rewardId, isPremium) =>
                 {
                     if (_isClaimingReward) return;
                     _isClaimingReward = true;
-                    _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(itemId, isPremium));
+                    _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(rewardId, isPremium));
                 };
 
                 premiumGrid.AddChild(dayCard);
