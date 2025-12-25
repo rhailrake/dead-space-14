@@ -172,8 +172,8 @@ public sealed class EmeraldItemCard : Control
         {
             HorizontalExpand = true,
             VerticalExpand = true,
-            Stretch = TextureRect.StretchMode.KeepCentered,
-            Visible = false
+            Stretch = TextureRect.StretchMode.KeepAspectCentered,
+            Visible = false,
         };
 
         _spriteContainer.AddChild(_spriteView);

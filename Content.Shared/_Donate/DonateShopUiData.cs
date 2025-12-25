@@ -395,6 +395,7 @@ public sealed class CalendarProgress
 [Serializable, NetSerializable]
 public sealed class DailyCalendarState
 {
+    public string CalendarName { get; }
     public List<CalendarDayReward> NormalRewards { get; }
     public List<CalendarDayReward> PremiumRewards { get; }
     public CalendarPreview? NormalPreview { get; }
@@ -404,12 +405,14 @@ public sealed class DailyCalendarState
     public string ErrorMessage { get; }
 
     public DailyCalendarState(
+        string calendarName,
         List<CalendarDayReward> normalRewards,
         List<CalendarDayReward> premiumRewards,
         CalendarPreview? normalPreview,
         CalendarPreview? premiumPreview,
         CalendarProgress? progress)
     {
+        CalendarName = calendarName;
         NormalRewards = normalRewards;
         PremiumRewards = premiumRewards;
         NormalPreview = normalPreview;
@@ -421,6 +424,7 @@ public sealed class DailyCalendarState
 
     public DailyCalendarState(string errorMessage)
     {
+        CalendarName = string.Empty;
         NormalRewards = new List<CalendarDayReward>();
         PremiumRewards = new List<CalendarDayReward>();
         HasError = true;

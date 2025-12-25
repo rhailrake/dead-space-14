@@ -69,7 +69,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private BoxContainer _calendarPanel = default!;
     private bool _calendarLoading;
     private bool _isClaimingReward;
-    private EmeraldRewardClaimPopup? _rewardPopup;
+    private bool _showingRewardResult;
+    private ClaimRewardResult? _lastClaimResult;
 
     public DonateShopWindow()
     {
@@ -309,7 +310,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             Orientation = BoxContainer.LayoutOrientation.Vertical,
             HorizontalExpand = true,
             VerticalExpand = true,
-            SeparationOverride = 16,
+            SeparationOverride = 12,
             Margin = new Thickness(2)
         };
 
@@ -580,26 +581,39 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     public void ShowClaimResult(ClaimRewardResult result)
     {
         _isClaimingReward = false;
+        _showingRewardResult = true;
+        _lastClaimResult = result;
 
-        if (_rewardPopup != null)
+        ShowRewardResultPage(result);
+    }
+
+    private void ShowRewardResultPage(ClaimRewardResult result)
+    {
+        _calendarPanel.RemoveAllChildren();
+
+        var mainContainer = new BoxContainer
         {
-            _rewardPopup.Parent?.RemoveChild(_rewardPopup);
-            _rewardPopup = null;
-        }
+            Orientation = BoxContainer.LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+            HorizontalAlignment = HAlignment.Center,
+            VerticalAlignment = VAlignment.Center
+        };
 
-        _rewardPopup = new EmeraldRewardClaimPopup
+        var rewardDisplay = new EmeraldRewardResultDisplay
         {
             IsSuccess = result.Success,
             Message = result.Message,
             ItemName = result.ClaimedItem?.Name ?? "Unknown",
             ProtoId = result.ClaimedItem?.ItemIdInGame,
-            IsPremium = result.IsPremium
+            IsPremium = result.IsPremium,
+            HorizontalAlignment = HAlignment.Center
         };
 
-        _rewardPopup.OnClose += () =>
+        rewardDisplay.OnClosePressed += () =>
         {
-            _rewardPopup?.Parent?.RemoveChild(_rewardPopup);
-            _rewardPopup = null;
+            _showingRewardResult = false;
+            _lastClaimResult = null;
 
             if (result.Success)
             {
@@ -609,13 +623,15 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestDailyCalendar());
                 _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
             }
+            else
+            {
+                if (_calendarState != null)
+                    UpdateCalendarContent(_calendarState);
+            }
         };
 
-        UserInterfaceManager.WindowRoot.AddChild(_rewardPopup);
-
-        var centerX = (UserInterfaceManager.WindowRoot.Size.X - 320) / 2f;
-        var centerY = (UserInterfaceManager.WindowRoot.Size.Y - 420) / 2f;
-        LayoutContainer.SetPosition(_rewardPopup, new Vector2(centerX, centerY));
+        mainContainer.AddChild(rewardDisplay);
+        _calendarPanel.AddChild(mainContainer);
     }
 
     private void ShowCalendarError(string message)
@@ -683,6 +699,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             CurrentDay = currentDay,
             TotalDays = totalDays,
             IsPremiumTrack = false,
+            CalendarName = state.CalendarName,
             HorizontalExpand = true
         };
         _calendarPanel.AddChild(normalHeader);
@@ -692,7 +709,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             var todayCard = new EmeraldTodayRewardCard
             {
                 ItemName = state.NormalPreview.Today.Item?.Name ?? "Unknown",
-                StatusText = state.NormalPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО ДЛЯ ПОЛУЧЕНИЯ" : "УЖЕ ПОЛУЧЕНО",
+                StatusText = state.NormalPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО" : "ПОЛУЧЕНО",
                 IsAvailable = state.NormalPreview.Today.Status == CalendarRewardStatus.Available,
                 IsPremium = false,
                 HorizontalExpand = true
@@ -704,8 +721,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         {
             Columns = CalculateCalendarColumns(),
             HorizontalExpand = true,
-            HSeparationOverride = 8,
-            VSeparationOverride = 8
+            HSeparationOverride = 6,
+            VSeparationOverride = 6
         };
 
         foreach (var reward in state.NormalRewards)
@@ -733,7 +750,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
         _calendarPanel.AddChild(normalGrid);
 
-        _calendarPanel.AddChild(new Control { MinHeight = 20 });
+        _calendarPanel.AddChild(new Control { MinHeight = 12 });
 
         var premiumHeader = new EmeraldCalendarHeader
         {
@@ -763,7 +780,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 var todayPremiumCard = new EmeraldTodayRewardCard
                 {
                     ItemName = state.PremiumPreview.Today.Item?.Name ?? "Unknown",
-                    StatusText = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО ДЛЯ ПОЛУЧЕНИЯ" : "УЖЕ ПОЛУЧЕНО",
+                    StatusText = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО" : "ПОЛУЧЕНО",
                     IsAvailable = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available,
                     IsPremium = true,
                     HorizontalExpand = true
@@ -775,8 +792,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             {
                 Columns = CalculateCalendarColumns(),
                 HorizontalExpand = true,
-                HSeparationOverride = 8,
-                VSeparationOverride = 8
+                HSeparationOverride = 6,
+                VSeparationOverride = 6
             };
 
             foreach (var reward in state.PremiumRewards)
@@ -1493,8 +1510,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
     private int CalculateCalendarColumns()
     {
-        const float cardWidth = 100f;
-        const float spacing = 8f;
+        const float cardWidth = 85f;
+        const float spacing = 6f;
         const float padding = 20f;
 
         var availableWidth = Size.X - padding;

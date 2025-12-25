@@ -11,9 +11,9 @@ public sealed class EmeraldCalendarHeader : Control
 {
     [Dependency] private readonly IResourceCache _resourceCache = default!;
 
-    private const int TitleFontSize = 16;
-    private const int SubtitleFontSize = 10;
-    private const int DayFontSize = 12;
+    private const int TitleFontSize = 14;
+    private const int SubtitleFontSize = 9;
+    private const int DayFontSize = 10;
 
     private Font _titleFont = default!;
     private Font _subtitleFont = default!;
@@ -22,6 +22,7 @@ public sealed class EmeraldCalendarHeader : Control
     private int _currentDay;
     private int _totalDays;
     private bool _isPremiumTrack;
+    private string _calendarName = "";
 
     private readonly Color _bgColor = Color.FromHex("#1a0f2e");
     private readonly Color _borderColor = Color.FromHex("#4a3a6a");
@@ -30,6 +31,7 @@ public sealed class EmeraldCalendarHeader : Control
     private readonly Color _dayColor = Color.FromHex("#00FFAA");
     private readonly Color _premiumColor = Color.FromHex("#ffd700");
     private readonly Color _premiumBgColor = Color.FromHex("#2a1a3e");
+    private readonly Color _calendarNameColor = Color.FromHex("#d4a574");
 
     public int CurrentDay
     {
@@ -61,6 +63,16 @@ public sealed class EmeraldCalendarHeader : Control
         }
     }
 
+    public string CalendarName
+    {
+        get => _calendarName;
+        set
+        {
+            _calendarName = value;
+            InvalidateMeasure();
+        }
+    }
+
     public EmeraldCalendarHeader()
     {
         IoCManager.InjectDependencies(this);
@@ -74,7 +86,7 @@ public sealed class EmeraldCalendarHeader : Control
     protected override Vector2 MeasureOverride(Vector2 availableSize)
     {
         var width = float.IsPositiveInfinity(availableSize.X) ? 400 : availableSize.X;
-        return new Vector2(width, 70);
+        return new Vector2(width, 55);
     }
 
     protected override void Draw(DrawingHandleScreen handle)
@@ -87,28 +99,32 @@ public sealed class EmeraldCalendarHeader : Control
         var borderColor = _isPremiumTrack ? _premiumColor : _borderColor;
         DrawBorder(handle, rect, borderColor);
 
-        var padding = 16f * UIScale;
-        var currentY = 12f * UIScale;
+        var padding = 12f * UIScale;
+        var currentY = 8f * UIScale;
 
-        var titleText = _isPremiumTrack ? "PREMIUM НАГРАДЫ" : "ЕЖЕДНЕВНЫЕ НАГРАДЫ";
+        var titleText = _isPremiumTrack ? "PREMIUM НАГРАДЫ" : "НАГРАДЫ";
         var titleColor = _isPremiumTrack ? _premiumColor : _titleColor;
-        var titleWidth = GetTextWidth(titleText, _titleFont);
-        var titleX = (PixelSize.X - titleWidth) / 2f;
-        handle.DrawString(_titleFont, new Vector2(titleX, currentY), titleText, UIScale, titleColor);
+        handle.DrawString(_titleFont, new Vector2(padding, currentY), titleText, UIScale, titleColor);
 
-        currentY += _titleFont.GetLineHeight(UIScale) + 6f * UIScale;
+        if (!string.IsNullOrEmpty(_calendarName) && !_isPremiumTrack)
+        {
+            var nameWidth = GetTextWidth(_calendarName.ToUpper(), _subtitleFont);
+            var nameX = (PixelSize.X - nameWidth) / 2f;
+            handle.DrawString(_subtitleFont, new Vector2(nameX, currentY + 2f * UIScale), _calendarName.ToUpper(), UIScale, _calendarNameColor);
+        }
+
+        currentY += _titleFont.GetLineHeight(UIScale) + 4f * UIScale;
 
         var subtitleText = _isPremiumTrack
-            ? "Эксклюзивные награды для обладателей Premium"
-            : "Заходите каждый день и получайте награды";
+            ? "Эксклюзивные награды для Premium"
+            : "Заходите каждый день";
         var subtitleWidth = GetTextWidth(subtitleText, _subtitleFont);
-        var subtitleX = (PixelSize.X - subtitleWidth) / 2f;
-        handle.DrawString(_subtitleFont, new Vector2(subtitleX, currentY), subtitleText, UIScale, _subtitleColor);
+        handle.DrawString(_subtitleFont, new Vector2(padding, currentY), subtitleText, UIScale, _subtitleColor);
 
-        var dayText = $"ДЕНЬ {_currentDay} / {_totalDays}";
+        var dayText = $"ДЕНЬ {_currentDay}/{_totalDays}";
         var dayWidth = GetTextWidth(dayText, _dayFont);
         var dayX = PixelSize.X - dayWidth - padding;
-        var dayY = 12f * UIScale;
+        var dayY = 8f * UIScale;
         var dayTextColor = _isPremiumTrack ? _premiumColor : _dayColor;
         handle.DrawString(_dayFont, new Vector2(dayX, dayY), dayText, UIScale, dayTextColor);
     }
@@ -148,8 +164,8 @@ public sealed class EmeraldPremiumLockedCard : Control
 {
     [Dependency] private readonly IResourceCache _resourceCache = default!;
 
-    private const int TitleFontSize = 14;
-    private const int MessageFontSize = 11;
+    private const int TitleFontSize = 12;
+    private const int MessageFontSize = 10;
 
     private Font _titleFont = default!;
     private Font _messageFont = default!;
@@ -180,7 +196,7 @@ public sealed class EmeraldPremiumLockedCard : Control
         _buyButton = new EmeraldButton
         {
             Text = "ПОЛУЧИТЬ PREMIUM",
-            MinSize = new Vector2(200, 0)
+            MinSize = new Vector2(180, 0)
         };
         _buyButton.OnPressed += () => OnBuyPremiumPressed?.Invoke();
         AddChild(_buyButton);
@@ -190,7 +206,7 @@ public sealed class EmeraldPremiumLockedCard : Control
     {
         var width = float.IsPositiveInfinity(availableSize.X) ? 400 : availableSize.X;
         _buyButton?.Measure(availableSize);
-        return new Vector2(width, 180);
+        return new Vector2(width, 120);
     }
 
     protected override Vector2 ArrangeOverride(Vector2 finalSize)
@@ -199,7 +215,7 @@ public sealed class EmeraldPremiumLockedCard : Control
         {
             var buttonSize = _buyButton.DesiredSize;
             var buttonX = (finalSize.X - buttonSize.X) / 2f;
-            var buttonY = finalSize.Y - buttonSize.Y - 20f;
+            var buttonY = finalSize.Y - buttonSize.Y - 12f;
             _buyButton.Arrange(new UIBox2(buttonX, buttonY, buttonX + buttonSize.X, buttonY + buttonSize.Y));
         }
 
@@ -213,27 +229,20 @@ public sealed class EmeraldPremiumLockedCard : Control
         handle.DrawRect(rect, _bgColor.WithAlpha(0.9f));
         DrawBorder(handle, rect, _borderColor);
 
-        var padding = 20f * UIScale;
-        var currentY = padding;
+        var padding = 16f * UIScale;
+        var currentY = 12f * UIScale;
 
         var titleText = "PREMIUM НАГРАДЫ ЗАБЛОКИРОВАНЫ";
         var titleWidth = GetTextWidth(titleText, _titleFont);
         var titleX = (PixelSize.X - titleWidth) / 2f;
         handle.DrawString(_titleFont, new Vector2(titleX, currentY), titleText, UIScale, _titleColor);
 
-        currentY += _titleFont.GetLineHeight(UIScale) + 6f * UIScale;
+        currentY += _titleFont.GetLineHeight(UIScale) + 4f * UIScale;
 
-        var line1 = "Получите Premium, чтобы разблокировать";
+        var line1 = "Получите Premium для доступа";
         var line1Width = GetTextWidth(line1, _messageFont);
         var line1X = (PixelSize.X - line1Width) / 2f;
         handle.DrawString(_messageFont, new Vector2(line1X, currentY), line1, UIScale, _messageColor);
-
-        currentY += _messageFont.GetLineHeight(UIScale) + 2f * UIScale;
-
-        var line2 = "эксклюзивные ежедневные награды!";
-        var line2Width = GetTextWidth(line2, _messageFont);
-        var line2X = (PixelSize.X - line2Width) / 2f;
-        handle.DrawString(_messageFont, new Vector2(line2X, currentY), line2, UIScale, _messageColor);
     }
 
     private void DrawBorder(DrawingHandleScreen handle, UIBox2 rect, Color color)
@@ -271,9 +280,9 @@ public sealed class EmeraldTodayRewardCard : Control
 {
     [Dependency] private readonly IResourceCache _resourceCache = default!;
 
-    private const int TitleFontSize = 12;
-    private const int ItemFontSize = 10;
-    private const int StatusFontSize = 9;
+    private const int TitleFontSize = 10;
+    private const int ItemFontSize = 9;
+    private const int StatusFontSize = 8;
 
     private Font _titleFont = default!;
     private Font _itemFont = default!;
@@ -345,7 +354,7 @@ public sealed class EmeraldTodayRewardCard : Control
     protected override Vector2 MeasureOverride(Vector2 availableSize)
     {
         var width = float.IsPositiveInfinity(availableSize.X) ? 200 : availableSize.X;
-        return new Vector2(width, 70);
+        return new Vector2(width, 55);
     }
 
     protected override void Draw(DrawingHandleScreen handle)
@@ -357,18 +366,18 @@ public sealed class EmeraldTodayRewardCard : Control
         var borderColor = _isPremium ? _premiumColor : _isAvailable ? _availableColor : _borderColor;
         DrawBorder(handle, rect, borderColor);
 
-        var padding = 10f * UIScale;
-        var currentY = padding;
+        var padding = 8f * UIScale;
+        var currentY = 6f * UIScale;
 
         var titleText = _isPremium ? "СЕГОДНЯ (PREMIUM)" : "СЕГОДНЯ";
         var titleColor = _isPremium ? _premiumColor : _titleColor;
         handle.DrawString(_titleFont, new Vector2(padding, currentY), titleText, UIScale, titleColor);
 
-        currentY += _titleFont.GetLineHeight(UIScale) + 4f * UIScale;
+        currentY += _titleFont.GetLineHeight(UIScale) + 2f * UIScale;
 
         handle.DrawString(_itemFont, new Vector2(padding, currentY), _itemName, UIScale, _itemColor);
 
-        currentY += _itemFont.GetLineHeight(UIScale) + 4f * UIScale;
+        currentY += _itemFont.GetLineHeight(UIScale) + 2f * UIScale;
 
         var statusColor = _isAvailable ? _availableColor : _claimedColor;
         handle.DrawString(_statusFont, new Vector2(padding, currentY), _statusText, UIScale, statusColor);

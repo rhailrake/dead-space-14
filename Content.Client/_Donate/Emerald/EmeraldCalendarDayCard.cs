@@ -18,9 +18,9 @@ public sealed class EmeraldCalendarDayCard : Control
     [Dependency] private readonly IEntityManager _entMan = default!;
     [Dependency] private readonly IPrototypeManager _protoManager = default!;
 
-    private const int BaseDayFontSize = 16;
-    private const int BaseNameFontSize = 8;
-    private const int BaseStatusFontSize = 7;
+    private const int BaseDayFontSize = 12;
+    private const int BaseNameFontSize = 7;
+    private const int BaseStatusFontSize = 6;
 
     private Font _dayFont = default!;
     private Font _nameFont = default!;
@@ -50,7 +50,7 @@ public sealed class EmeraldCalendarDayCard : Control
 
     private SpriteView? _spriteView;
     private TextureRect? _textureRect;
-    private PanelContainer? _spriteContainer;
+    private EmeraldPanel? _spriteContainer;
     private Texture? _fallbackTexture;
     private Texture? _lockTexture;
 
@@ -137,12 +137,9 @@ public sealed class EmeraldCalendarDayCard : Control
 
     private void BuildSprite()
     {
-        _spriteContainer = new PanelContainer
+        _spriteContainer = new EmeraldPanel
         {
-            PanelOverride = new StyleBoxFlat
-            {
-                BackgroundColor = _spriteBgColor.WithAlpha(0.4f)
-            }
+            MouseFilter = MouseFilterMode.Pass
         };
 
         _spriteView = new SpriteView(_entMan)
@@ -157,8 +154,8 @@ public sealed class EmeraldCalendarDayCard : Control
         {
             HorizontalExpand = true,
             VerticalExpand = true,
-            Stretch = TextureRect.StretchMode.KeepCentered,
-            Visible = false
+            Stretch = TextureRect.StretchMode.KeepAspectCentered,
+            Visible = false,
         };
 
         _spriteContainer.AddChild(_spriteView);
@@ -178,7 +175,7 @@ public sealed class EmeraldCalendarDayCard : Control
                 var spawned = _entMan.SpawnEntity(_protoId, MapCoordinates.Nullspace);
                 _spriteView.SetEntity(spawned);
                 _spriteView.Visible = true;
-                _spriteView.Scale = new Vector2(1.5f, 1.5f);
+                _spriteView.Scale = new Vector2(1.2f, 1.2f);
                 _textureRect.Visible = false;
                 return;
             }
@@ -214,16 +211,16 @@ public sealed class EmeraldCalendarDayCard : Control
 
     protected override Vector2 MeasureOverride(Vector2 availableSize)
     {
-        return new Vector2(100, 130);
+        return new Vector2(85, 105);
     }
 
     protected override Vector2 ArrangeOverride(Vector2 finalSize)
     {
         if (_spriteContainer != null)
         {
-            var spriteY = 28f;
-            var spriteHeight = 55f;
-            var spriteBox = new UIBox2(4, spriteY, finalSize.X - 4, spriteY + spriteHeight);
+            var spriteY = 22f;
+            var spriteHeight = 42f;
+            var spriteBox = new UIBox2(3, spriteY, finalSize.X - 3, spriteY + spriteHeight);
             _spriteContainer.Arrange(spriteBox);
         }
 
@@ -233,9 +230,6 @@ public sealed class EmeraldCalendarDayCard : Control
     protected override void Draw(DrawingHandleScreen handle)
     {
         var rect = new UIBox2(0, 0, PixelSize.X, PixelSize.Y);
-
-        var bgAlpha = _status == CalendarRewardStatus.Available ? 0.9f : 0.6f;
-        handle.DrawRect(rect, _bgColor.WithAlpha(bgAlpha));
 
         if (_isCurrentDay && _status == CalendarRewardStatus.Available)
         {
@@ -262,7 +256,7 @@ public sealed class EmeraldCalendarDayCard : Control
         var dayText = $"ДЕНЬ {_day}";
         var dayWidth = GetTextWidth(dayText, _dayFont);
         var dayX = (PixelSize.X - dayWidth) / 2f;
-        var dayY = 6f * UIScale;
+        var dayY = 4f * UIScale;
 
         var dayTextColor = _isPremium ? _premiumColor :
                           _status == CalendarRewardStatus.Available ? _availableColor :
@@ -271,14 +265,8 @@ public sealed class EmeraldCalendarDayCard : Control
 
         handle.DrawString(_dayFont, new Vector2(dayX, dayY), dayText, UIScale, dayTextColor);
 
-        if (_status == CalendarRewardStatus.Locked)
-        {
-            var lockOverlay = new UIBox2(4, 28f, PixelSize.X - 4, 83f);
-            handle.DrawRect(lockOverlay, Color.Black.WithAlpha(0.5f));
-        }
-
-        var nameY = 88f * UIScale;
-        var maxNameWidth = PixelSize.X - 8f * UIScale;
+        var nameY = 68f * UIScale;
+        var maxNameWidth = PixelSize.X - 6f * UIScale;
         var displayName = TruncateText(_itemName, maxNameWidth, _nameFont);
         var nameWidth = GetTextWidth(displayName, _nameFont);
         var nameX = (PixelSize.X - nameWidth) / 2f;
@@ -286,7 +274,7 @@ public sealed class EmeraldCalendarDayCard : Control
         var nameTextColor = _status == CalendarRewardStatus.Locked ? _lockedColor : _nameColor;
         handle.DrawString(_nameFont, new Vector2(nameX, nameY), displayName, UIScale, nameTextColor);
 
-        var statusY = nameY + _nameFont.GetLineHeight(UIScale) + 4f * UIScale;
+        var statusY = nameY + _nameFont.GetLineHeight(UIScale) + 2f * UIScale;
         string statusText;
         Color statusColor;
 
@@ -315,7 +303,7 @@ public sealed class EmeraldCalendarDayCard : Control
             var premiumText = "PREMIUM";
             var premiumWidth = GetTextWidth(premiumText, _statusFont);
             var premiumX = (PixelSize.X - premiumWidth) / 2f;
-            var premiumY = statusY + _statusFont.GetLineHeight(UIScale) + 2f * UIScale;
+            var premiumY = statusY + _statusFont.GetLineHeight(UIScale) + 1f * UIScale;
             handle.DrawString(_statusFont, new Vector2(premiumX, premiumY), premiumText, UIScale, _premiumColor);
         }
     }

@@ -5,22 +5,21 @@ using Robust.Client.Graphics;
 using Robust.Client.ResourceManagement;
 using Robust.Client.UserInterface;
 using Robust.Client.UserInterface.Controls;
-using Robust.Shared.Input;
 using Robust.Shared.Map;
 using Robust.Shared.Prototypes;
 using Robust.Shared.Timing;
 
 namespace Content.Client._Donate.Emerald;
 
-public sealed class EmeraldRewardClaimPopup : Control
+public sealed class EmeraldRewardResultDisplay : Control
 {
     [Dependency] private readonly IResourceCache _resourceCache = default!;
     [Dependency] private readonly IEntityManager _entMan = default!;
     [Dependency] private readonly IPrototypeManager _protoManager = default!;
 
-    private const int TitleFontSize = 18;
-    private const int NameFontSize = 14;
-    private const int MessageFontSize = 11;
+    private const int TitleFontSize = 16;
+    private const int NameFontSize = 12;
+    private const int MessageFontSize = 10;
 
     private Font _titleFont = default!;
     private Font _nameFont = default!;
@@ -34,16 +33,15 @@ public sealed class EmeraldRewardClaimPopup : Control
 
     private float _animationProgress;
     private float _particleTime;
-    private List<Particle> _particles = new();
+    private readonly List<Particle> _particles = new();
     private bool _animationComplete;
+    private bool _particlesInitialized;
 
     private readonly Color _bgColor = Color.FromHex("#0f0a1e");
-    private readonly Color _borderColor = Color.FromHex("#6d5a8a");
     private readonly Color _successColor = Color.FromHex("#00FFAA");
     private readonly Color _errorColor = Color.FromHex("#ff6b6b");
     private readonly Color _premiumColor = Color.FromHex("#ffd700");
     private readonly Color _textColor = Color.FromHex("#c0b3da");
-    private readonly Color _glowColor = Color.FromHex("#d4c5e8");
     private readonly Color _particleColor = Color.FromHex("#00FFAA");
     private readonly Color _premiumParticleColor = Color.FromHex("#ffd700");
 
@@ -53,7 +51,7 @@ public sealed class EmeraldRewardClaimPopup : Control
     private Texture? _fallbackTexture;
     private EmeraldButton? _closeButton;
 
-    public event Action? OnClose;
+    public event Action? OnClosePressed;
 
     public string ItemName
     {
@@ -105,7 +103,7 @@ public sealed class EmeraldRewardClaimPopup : Control
         }
     }
 
-    public EmeraldRewardClaimPopup()
+    public EmeraldRewardResultDisplay()
     {
         IoCManager.InjectDependencies(this);
 
@@ -117,17 +115,13 @@ public sealed class EmeraldRewardClaimPopup : Control
         MouseFilter = MouseFilterMode.Stop;
 
         BuildUI();
-        GenerateParticles();
     }
 
     private void BuildUI()
     {
         _spriteContainer = new PanelContainer
         {
-            PanelOverride = new StyleBoxFlat
-            {
-                BackgroundColor = Color.Transparent
-            }
+            PanelOverride = new StyleBoxFlat { BackgroundColor = Color.Transparent }
         };
 
         _spriteView = new SpriteView(_entMan)
@@ -142,8 +136,8 @@ public sealed class EmeraldRewardClaimPopup : Control
         {
             HorizontalExpand = true,
             VerticalExpand = true,
-            Stretch = TextureRect.StretchMode.KeepCentered,
-            Visible = false
+            Stretch = TextureRect.StretchMode.KeepAspectCentered,
+            Visible = false,
         };
 
         _spriteContainer.AddChild(_spriteView);
@@ -153,26 +147,30 @@ public sealed class EmeraldRewardClaimPopup : Control
         _closeButton = new EmeraldButton
         {
             Text = "ЗАКРЫТЬ",
-            MinSize = new Vector2(120, 36)
+            MinSize = new Vector2(140, 36)
         };
-        _closeButton.OnPressed += () => OnClose?.Invoke();
+        _closeButton.OnPressed += () => OnClosePressed?.Invoke();
         AddChild(_closeButton);
     }
 
     private void GenerateParticles()
     {
+        _particles.Clear();
         var random = new Random();
-        for (int i = 0; i < 30; i++)
+
+        var centerX = PixelSize.X / 2f;
+        var centerY = PixelSize.Y / 2f;
+
+        for (int i = 0; i < 25; i++)
         {
             _particles.Add(new Particle
             {
-                X = random.NextSingle() * 300f,
-                Y = random.NextSingle() * 400f,
-                VelocityX = (random.NextSingle() - 0.5f) * 100f,
-                VelocityY = -random.NextSingle() * 80f - 20f,
-                Size = random.NextSingle() * 4f + 2f,
-                Alpha = random.NextSingle() * 0.5f + 0.5f,
-                Lifetime = random.NextSingle() * 2f + 1f
+                X = centerX + (random.NextSingle() - 0.5f) * 120f,
+                Y = centerY + (random.NextSingle() - 0.5f) * 120f,
+                VelocityX = (random.NextSingle() - 0.5f) * 80f,
+                VelocityY = -random.NextSingle() * 60f - 15f,
+                Size = random.NextSingle() * 3f + 1.5f,
+                Alpha = random.NextSingle() * 0.5f + 0.5f
             });
         }
     }
@@ -189,7 +187,7 @@ public sealed class EmeraldRewardClaimPopup : Control
                 var spawned = _entMan.SpawnEntity(_protoId, MapCoordinates.Nullspace);
                 _spriteView.SetEntity(spawned);
                 _spriteView.Visible = true;
-                _spriteView.Scale = new Vector2(3f, 3f);
+                _spriteView.Scale = new Vector2(2.5f, 2.5f);
                 _textureRect.Visible = false;
                 return;
             }
@@ -225,25 +223,25 @@ public sealed class EmeraldRewardClaimPopup : Control
 
     protected override Vector2 MeasureOverride(Vector2 availableSize)
     {
-        return new Vector2(320, 420);
+        return new Vector2(300, 380);
     }
 
     protected override Vector2 ArrangeOverride(Vector2 finalSize)
     {
         if (_spriteContainer != null)
         {
-            var spriteSize = 100f;
-            var spriteX = (finalSize.X - spriteSize) / 2f;
-            var spriteY = 100f;
-            _spriteContainer.Arrange(new UIBox2(spriteX, spriteY, spriteX + spriteSize, spriteY + spriteSize));
+            var size = 80f;
+            var x = (finalSize.X - size) / 2f;
+            var y = 90f;
+            _spriteContainer.Arrange(new UIBox2(x, y, x + size, y + size));
         }
 
         if (_closeButton != null)
         {
-            var buttonSize = _closeButton.DesiredSize;
-            var buttonX = (finalSize.X - buttonSize.X) / 2f;
-            var buttonY = finalSize.Y - buttonSize.Y - 20f;
-            _closeButton.Arrange(new UIBox2(buttonX, buttonY, buttonX + buttonSize.X, buttonY + buttonSize.Y));
+            var s = _closeButton.DesiredSize;
+            var x = (finalSize.X - s.X) / 2f;
+            var y = finalSize.Y - s.Y - 50f;
+            _closeButton.Arrange(new UIBox2(x, y, x + s.X, y + s.Y));
         }
 
         return finalSize;
@@ -253,6 +251,12 @@ public sealed class EmeraldRewardClaimPopup : Control
     {
         base.FrameUpdate(args);
 
+        if (!_particlesInitialized && PixelSize.X > 0 && PixelSize.Y > 0)
+        {
+            GenerateParticles();
+            _particlesInitialized = true;
+        }
+
         if (!_animationComplete)
         {
             _animationProgress = Math.Min(1f, _animationProgress + (float)args.DeltaSeconds * 2f);
@@ -261,132 +265,78 @@ public sealed class EmeraldRewardClaimPopup : Control
         }
 
         _particleTime += (float)args.DeltaSeconds;
+        var random = new Random();
 
         foreach (var particle in _particles)
         {
             particle.X += particle.VelocityX * (float)args.DeltaSeconds;
             particle.Y += particle.VelocityY * (float)args.DeltaSeconds;
-            particle.VelocityY += 30f * (float)args.DeltaSeconds;
-            particle.Alpha = Math.Max(0f, particle.Alpha - (float)args.DeltaSeconds * 0.3f);
+            particle.VelocityY += 25f * (float)args.DeltaSeconds;
+            particle.Alpha = Math.Max(0f, particle.Alpha - (float)args.DeltaSeconds * 0.25f);
 
-            if (particle.Y > PixelSize.Y || particle.Alpha <= 0)
+            if (particle.Y > PixelSize.Y || particle.Alpha <= 0f)
             {
-                var random = new Random();
-                particle.X = random.NextSingle() * PixelSize.X;
-                particle.Y = PixelSize.Y / 2f;
-                particle.VelocityX = (random.NextSingle() - 0.5f) * 100f;
-                particle.VelocityY = -random.NextSingle() * 80f - 20f;
+                var cx = PixelSize.X / 2f;
+                var cy = PixelSize.Y / 2f;
+
+                particle.X = cx + (random.NextSingle() - 0.5f) * 120f;
+                particle.Y = cy;
+                particle.VelocityX = (random.NextSingle() - 0.5f) * 80f;
+                particle.VelocityY = -random.NextSingle() * 60f - 15f;
                 particle.Alpha = random.NextSingle() * 0.5f + 0.5f;
             }
         }
-
-        InvalidateMeasure();
     }
 
     protected override void Draw(DrawingHandleScreen handle)
     {
         var rect = new UIBox2(0, 0, PixelSize.X, PixelSize.Y);
-
         handle.DrawRect(rect, _bgColor.WithAlpha(0.95f));
 
-        var particleColor = _isPremium ? _premiumParticleColor : _particleColor;
-        foreach (var particle in _particles)
+        var pColor = _isPremium ? _premiumParticleColor : _particleColor;
+        foreach (var p in _particles)
         {
-            if (particle.Alpha <= 0) continue;
+            if (p.Alpha <= 0f) continue;
 
-            var particleRect = new UIBox2(
-                particle.X - particle.Size / 2f,
-                particle.Y - particle.Size / 2f,
-                particle.X + particle.Size / 2f,
-                particle.Y + particle.Size / 2f
-            );
-            handle.DrawRect(particleRect, particleColor.WithAlpha(particle.Alpha));
+            handle.DrawRect(
+                new UIBox2(
+                    p.X - p.Size / 2f,
+                    p.Y - p.Size / 2f,
+                    p.X + p.Size / 2f,
+                    p.Y + p.Size / 2f),
+                pColor.WithAlpha(p.Alpha));
         }
 
-        var accentColor = _isPremium ? _premiumColor : _isSuccess ? _successColor : _errorColor;
-
-        var glowIntensity = 0.3f + MathF.Sin(_particleTime * 2f) * 0.1f;
-        for (int i = 3; i >= 0; i--)
-        {
-            var offset = i * 2f * UIScale;
-            var glowRect = new UIBox2(rect.Left - offset, rect.Top - offset, rect.Right + offset, rect.Bottom + offset);
-            DrawBorder(handle, glowRect, accentColor.WithAlpha(glowIntensity / (i + 1)));
-        }
-
-        DrawBorder(handle, rect, accentColor);
+        var accent = _isPremium ? _premiumColor : _isSuccess ? _successColor : _errorColor;
 
         var scale = 0.5f + _animationProgress * 0.5f;
-        var titleText = _isSuccess ? "НАГРАДА ПОЛУЧЕНА!" : "ОШИБКА";
-        var titleWidth = GetTextWidth(titleText, _titleFont);
+        var title = _isSuccess ? "НАГРАДА ПОЛУЧЕНА!" : "ОШИБКА";
+        var titleWidth = GetTextWidth(title, _titleFont);
         var titleX = (PixelSize.X - titleWidth * scale) / 2f;
-        var titleY = 30f * UIScale;
+        var titleY = 24f * UIScale;
 
-        handle.DrawString(_titleFont, new Vector2(titleX, titleY), titleText, UIScale * scale, accentColor);
+        handle.DrawString(_titleFont, new Vector2(titleX, titleY), title, UIScale * scale, accent);
 
-        if (_isPremium)
-        {
-            var premiumText = "PREMIUM НАГРАДА";
-            var premiumWidth = GetTextWidth(premiumText, _messageFont);
-            var premiumX = (PixelSize.X - premiumWidth) / 2f;
-            var premiumY = titleY + _titleFont.GetLineHeight(UIScale) + 8f * UIScale;
-            handle.DrawString(_messageFont, new Vector2(premiumX, premiumY), premiumText, UIScale, _premiumColor);
-        }
-
-        var nameY = 220f * UIScale;
+        var nameY = 185f * UIScale;
         var nameWidth = GetTextWidth(_itemName, _nameFont);
-        var nameX = (PixelSize.X - nameWidth) / 2f;
-        handle.DrawString(_nameFont, new Vector2(nameX, nameY), _itemName, UIScale, _textColor);
-
-        if (!string.IsNullOrEmpty(_message))
-        {
-            var messageY = nameY + _nameFont.GetLineHeight(UIScale) + 12f * UIScale;
-            var messageWidth = GetTextWidth(_message, _messageFont);
-            var messageX = (PixelSize.X - messageWidth) / 2f;
-            var messageColor = _isSuccess ? _textColor : _errorColor;
-            handle.DrawString(_messageFont, new Vector2(messageX, messageY), _message, UIScale, messageColor);
-        }
-
-        if (_isSuccess)
-        {
-            var hintText = "Предмет добавлен в ваш инвентарь!";
-            var hintWidth = GetTextWidth(hintText, _messageFont);
-            var hintX = (PixelSize.X - hintWidth) / 2f;
-            var hintY = PixelSize.Y - 80f * UIScale;
-            handle.DrawString(_messageFont, new Vector2(hintX, hintY), hintText, UIScale, _successColor.WithAlpha(0.8f));
-        }
-    }
-
-    private void DrawBorder(DrawingHandleScreen handle, UIBox2 rect, Color color)
-    {
-        var thickness = Math.Max(1f, 2f * UIScale);
-        handle.DrawRect(new UIBox2(rect.Left, rect.Top, rect.Right, rect.Top + thickness), color);
-        handle.DrawRect(new UIBox2(rect.Left, rect.Bottom - thickness, rect.Right, rect.Bottom), color);
-        handle.DrawRect(new UIBox2(rect.Left, rect.Top, rect.Left + thickness, rect.Bottom), color);
-        handle.DrawRect(new UIBox2(rect.Right - thickness, rect.Top, rect.Right, rect.Bottom), color);
+        handle.DrawString(_nameFont,
+            new Vector2((PixelSize.X - nameWidth) / 2f, nameY),
+            _itemName, UIScale, _textColor);
     }
 
     private float GetTextWidth(string text, Font font)
     {
-        if (string.IsNullOrEmpty(text))
-            return 0f;
-
-        var width = 0f;
-        foreach (var rune in text.EnumerateRunes())
+        var w = 0f;
+        foreach (var r in text.EnumerateRunes())
         {
-            var metrics = font.GetCharMetrics(rune, UIScale);
-            if (metrics.HasValue)
-                width += metrics.Value.Advance;
+            var m = font.GetCharMetrics(r, UIScale);
+            if (m.HasValue)
+                w += m.Value.Advance;
         }
-        return width;
+        return w;
     }
 
-    protected override void UIScaleChanged()
-    {
-        base.UIScaleChanged();
-        InvalidateMeasure();
-    }
-
-    private class Particle
+    private sealed class Particle
     {
         public float X;
         public float Y;
@@ -394,6 +344,5 @@ public sealed class EmeraldRewardClaimPopup : Control
         public float VelocityY;
         public float Size;
         public float Alpha;
-        public float Lifetime;
     }
 }
