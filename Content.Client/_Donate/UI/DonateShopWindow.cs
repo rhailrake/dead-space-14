@@ -72,6 +72,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private bool _showingRewardResult;
     private ClaimRewardResult? _lastClaimResult;
 
+    public event Action<string, int, bool>? OnOpenLootbox;
+
     public DonateShopWindow()
     {
         IoCManager.InjectDependencies(this);
@@ -1343,12 +1345,19 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 IsSpawned = _state.SpawnedItems.Contains(item.ItemIdInGame ?? ""),
                 IsTimeUp = _state.IsTimeUp,
                 SourceSubscription = item.SourceSubscription,
-                IsLootbox = item.IsLootbox
+                IsLootbox = item.IsLootbox,
+                ItemId = item.ItemId,
+                StelsHidden = item.StelsHidden
             };
 
             itemCard.OnSpawnRequest += protoId =>
             {
                 _entManager.EntityNetManager.SendSystemNetworkMessage(new DonateShopSpawnEvent(protoId));
+            };
+
+            itemCard.OnOpenLootboxRequest += (name, itemId, stelsHidden) =>
+            {
+                OnOpenLootbox?.Invoke(name, itemId, stelsHidden);
             };
 
             _itemsGrid.AddChild(itemCard);

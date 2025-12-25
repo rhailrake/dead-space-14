@@ -21,5 +21,6 @@ public interface IDonateApiService
     Task<PurchaseResult> PurchaseEnergyItemAsync(int user, int itemId, PurchasePeriod period);
     Task<DailyCalendarState> FetchDailyCalendarAsync(string userId);
     Task<ClaimRewardResult> ClaimCalendarRewardAsync(string userId, int rewardId);
+    Task<LootboxOpenResult> OpenLootboxAsync(string userId, int userItemId, bool stelsOpen);
 }
 

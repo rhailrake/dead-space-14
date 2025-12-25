@@ -34,6 +34,8 @@ public sealed class EmeraldItemCard : Control
     private bool _isTimeUp;
     private string? _sourceSubscription;
     private bool _isLootbox;
+    private int _itemId;
+    private bool _stelsHidden;
 
     private readonly Color _bgColor = Color.FromHex("#1a0f2e");
     private readonly Color _borderColor = Color.FromHex("#4a3a6a");
@@ -55,8 +57,10 @@ public sealed class EmeraldItemCard : Control
     private Texture? _fallbackTexture;
     private Texture? _lootboxTexture;
     private bool _hovered;
+    private EmeraldButton? _openButton;
 
     public event Action<string>? OnSpawnRequest;
+    public event Action<string, int, bool>? OnOpenLootboxRequest;
 
     public string ItemName
     {
@@ -104,6 +108,7 @@ public sealed class EmeraldItemCard : Control
         set
         {
             _isActive = value;
+            UpdateOpenButton();
             InvalidateMeasure();
         }
     }
@@ -145,8 +150,21 @@ public sealed class EmeraldItemCard : Control
         {
             _isLootbox = value;
             UpdateSprite();
+            UpdateOpenButton();
             InvalidateMeasure();
         }
+    }
+
+    public int ItemId
+    {
+        get => _itemId;
+        set => _itemId = value;
+    }
+
+    public bool StelsHidden
+    {
+        get => _stelsHidden;
+        set => _stelsHidden = value;
     }
 
     public bool IsFromSubscription => SourceSubscription != null;
@@ -193,6 +211,29 @@ public sealed class EmeraldItemCard : Control
         _spriteContainer.AddChild(_spriteView);
         _spriteContainer.AddChild(_textureRect);
         AddChild(_spriteContainer);
+
+        _openButton = new EmeraldButton
+        {
+            Text = "ОТКРЫТЬ",
+            Visible = false,
+            MinSize = new Vector2(80, 24)
+        };
+        _openButton.OnPressed += () =>
+        {
+            if (_isLootbox && _isActive && !_isSpawned)
+            {
+                OnOpenLootboxRequest?.Invoke(_itemName, _itemId, _stelsHidden);
+            }
+        };
+        AddChild(_openButton);
+    }
+
+    private void UpdateOpenButton()
+    {
+        if (_openButton == null)
+            return;
+
+        _openButton.Visible = _isLootbox && _isActive && !_isSpawned && !_isTimeUp;
     }
 
     private void UpdateSprite()
@@ -264,7 +305,7 @@ public sealed class EmeraldItemCard : Control
 
     protected override Vector2 MeasureOverride(Vector2 availableSize)
     {
-        return new Vector2(145, 200);
+        return new Vector2(145, 220);
     }
 
     protected override Vector2 ArrangeOverride(Vector2 finalSize)
@@ -273,6 +314,15 @@ public sealed class EmeraldItemCard : Control
         {
             var spriteBox = new UIBox2(2, 2, finalSize.X - 2, 95);
             _spriteContainer.Arrange(spriteBox);
+        }
+
+        if (_openButton != null && _openButton.Visible)
+        {
+            var buttonWidth = 100f;
+            var buttonHeight = 26f;
+            var buttonX = (finalSize.X - buttonWidth) / 2f;
+            var buttonY = finalSize.Y - buttonHeight - 6f;
+            _openButton.Arrange(new UIBox2(buttonX, buttonY, buttonX + buttonWidth, buttonY + buttonHeight));
         }
 
         return finalSize;
@@ -331,6 +381,9 @@ public sealed class EmeraldItemCard : Control
             var lootboxX = (PixelSize.X - lootboxWidth) / 2f;
             handle.DrawString(_sourceFont, new Vector2(lootboxX, statusY), lootboxText, UIScale, _lootboxColor);
             statusY += _sourceFont.GetLineHeight(UIScale) + 2f * UIScale;
+
+            if (_openButton != null && _openButton.Visible)
+                return;
         }
         else if (IsFromSubscription)
         {
@@ -375,6 +428,9 @@ public sealed class EmeraldItemCard : Control
             handle.DrawString(_statusFont, new Vector2(timeUpX, statusY), timeUpText, UIScale, _timeExpiringColor);
             return;
         }
+
+        if (_isLootbox)
+            return;
 
         string timeText;
         Color timeTextColor;

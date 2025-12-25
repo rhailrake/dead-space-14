@@ -53,6 +53,7 @@ public sealed class DonateShopSystem : EntitySystem
         SubscribeNetworkEvent<RequestPurchaseEnergyItem>(OnPurchaseEnergyItem);
         SubscribeNetworkEvent<RequestDailyCalendar>(OnRequestDailyCalendar);
         SubscribeNetworkEvent<RequestClaimCalendarReward>(OnClaimCalendarReward);
+        SubscribeNetworkEvent<RequestOpenLootbox>(OnOpenLootbox);
 
         _playMan.PlayerStatusChanged += OnPlayerStatusChanged;
 
@@ -304,6 +305,36 @@ public sealed class DonateShopSystem : EntitySystem
         var result = await _donateApiService.ClaimCalendarRewardAsync(userId, msg.RewardId);
 
         RaiseNetworkEvent(new ClaimCalendarRewardResult(result), args.SenderSession.Channel);
+    }
+
+    private void OnOpenLootbox(RequestOpenLootbox msg, EntitySessionEventArgs args)
+    {
+        _ = ProcessOpenLootbox(msg, args);
+    }
+
+    private async Task ProcessOpenLootbox(RequestOpenLootbox msg, EntitySessionEventArgs args)
+    {
+        if (_donateApiService == null)
+        {
+            RaiseNetworkEvent(new LootboxOpenedResult(new LootboxOpenResult(false, "Сервис недоступен")), args.SenderSession.Channel);
+            return;
+        }
+
+        var userId = args.SenderSession.UserId.ToString();
+        var result = await _donateApiService.OpenLootboxAsync(userId, msg.UserItemId, msg.StelsOpen);
+
+        RaiseNetworkEvent(new LootboxOpenedResult(result), args.SenderSession.Channel);
+
+        if (result.Success)
+        {
+            _cache.Remove(userId);
+            await FetchAndCachePlayerData(userId);
+
+            if (_cache.TryGetValue(userId, out var newData))
+            {
+                RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
+            }
+        }
     }
 
     private void OnSpawnRequest(DonateShopSpawnEvent msg, EntitySessionEventArgs args)
