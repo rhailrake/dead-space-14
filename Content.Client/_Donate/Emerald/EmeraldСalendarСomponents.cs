@@ -90,7 +90,7 @@ public sealed class EmeraldCalendarHeader : Control
         var padding = 16f * UIScale;
         var currentY = 12f * UIScale;
 
-        var titleText = _isPremiumTrack ? "★ PREMIUM НАГРАДЫ ★" : "ЕЖЕДНЕВНЫЕ НАГРАДЫ";
+        var titleText = _isPremiumTrack ? "PREMIUM НАГРАДЫ" : "ЕЖЕДНЕВНЫЕ НАГРАДЫ";
         var titleColor = _isPremiumTrack ? _premiumColor : _titleColor;
         var titleWidth = GetTextWidth(titleText, _titleFont);
         var titleX = (PixelSize.X - titleWidth) / 2f;
@@ -216,26 +216,19 @@ public sealed class EmeraldPremiumLockedCard : Control
         var padding = 20f * UIScale;
         var currentY = padding;
 
-        var lockText = "🔒";
-        var lockWidth = GetTextWidth(lockText, _titleFont);
-        var lockX = (PixelSize.X - lockWidth) / 2f;
-        handle.DrawString(_titleFont, new Vector2(lockX, currentY), lockText, UIScale * 2f, _lockColor);
-
-        currentY += _titleFont.GetLineHeight(UIScale) * 2f + 10f * UIScale;
-
         var titleText = "PREMIUM НАГРАДЫ ЗАБЛОКИРОВАНЫ";
         var titleWidth = GetTextWidth(titleText, _titleFont);
         var titleX = (PixelSize.X - titleWidth) / 2f;
         handle.DrawString(_titleFont, new Vector2(titleX, currentY), titleText, UIScale, _titleColor);
 
-        currentY += _titleFont.GetLineHeight(UIScale) + 8f * UIScale;
+        currentY += _titleFont.GetLineHeight(UIScale) + 6f * UIScale;
 
         var line1 = "Получите Premium, чтобы разблокировать";
         var line1Width = GetTextWidth(line1, _messageFont);
         var line1X = (PixelSize.X - line1Width) / 2f;
         handle.DrawString(_messageFont, new Vector2(line1X, currentY), line1, UIScale, _messageColor);
 
-        currentY += _messageFont.GetLineHeight(UIScale) + 4f * UIScale;
+        currentY += _messageFont.GetLineHeight(UIScale) + 2f * UIScale;
 
         var line2 = "эксклюзивные ежедневные награды!";
         var line2Width = GetTextWidth(line2, _messageFont);
@@ -367,7 +360,7 @@ public sealed class EmeraldTodayRewardCard : Control
         var padding = 10f * UIScale;
         var currentY = padding;
 
-        var titleText = _isPremium ? "★ СЕГОДНЯ (PREMIUM)" : "СЕГОДНЯ";
+        var titleText = _isPremium ? "СЕГОДНЯ (PREMIUM)" : "СЕГОДНЯ";
         var titleColor = _isPremium ? _premiumColor : _titleColor;
         handle.DrawString(_titleFont, new Vector2(padding, currentY), titleText, UIScale, titleColor);
 

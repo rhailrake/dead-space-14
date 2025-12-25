@@ -335,12 +335,14 @@ public sealed class CalendarRewardItemData
 [Serializable, NetSerializable]
 public sealed class CalendarDayReward
 {
+    public int RewardId { get; }
     public int Day { get; }
     public CalendarRewardStatus Status { get; }
     public CalendarRewardItemData Item { get; }
 
-    public CalendarDayReward(int day, CalendarRewardStatus status, CalendarRewardItemData item)
+    public CalendarDayReward(int rewardId, int day, CalendarRewardStatus status, CalendarRewardItemData item)
     {
+        RewardId = rewardId;
         Day = day;
         Status = status;
         Item = item;

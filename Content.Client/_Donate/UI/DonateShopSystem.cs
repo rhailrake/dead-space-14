@@ -16,6 +16,8 @@ public sealed class DonateShopSystem : EntitySystem
         SubscribeNetworkEvent<UpdateDonateShopUIState>(OnUIStateUpdate);
         SubscribeNetworkEvent<UpdateEnergyShopState>(OnEnergyShopUpdate);
         SubscribeNetworkEvent<PurchaseEnergyItemResult>(OnPurchaseResult);
+        SubscribeNetworkEvent<UpdateDailyCalendarState>(OnCalendarStateUpdate);
+        SubscribeNetworkEvent<ClaimCalendarRewardResult>(OnClaimResult);
     }
 
     private void OnUIStateUpdate(UpdateDonateShopUIState ev)
@@ -34,5 +36,17 @@ public sealed class DonateShopSystem : EntitySystem
     {
         var controller = _interfaceManager.GetUIController<DonateShopUIController>();
         controller.HandlePurchaseResult(ev.Result);
+    }
+
+    private void OnCalendarStateUpdate(UpdateDailyCalendarState ev)
+    {
+        var controller = _interfaceManager.GetUIController<DonateShopUIController>();
+        controller.UpdateCalendarState(ev.State);
+    }
+
+    private void OnClaimResult(ClaimCalendarRewardResult ev)
+    {
+        var controller = _interfaceManager.GetUIController<DonateShopUIController>();
+        controller.HandleClaimResult(ev.Result);
     }
 }

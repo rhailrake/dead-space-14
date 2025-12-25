@@ -715,7 +715,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 Day = reward.Day,
                 ItemName = reward.Item.Name,
                 ProtoId = reward.Item.ItemIdInGame,
-                ItemId = reward.Item.Id,
+                ItemId = reward.RewardId,
                 Status = reward.Status,
                 IsPremium = false,
                 IsCurrentDay = reward.Day == currentDay
@@ -786,7 +786,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                     Day = reward.Day,
                     ItemName = reward.Item.Name,
                     ProtoId = reward.Item.ItemIdInGame,
-                    ItemId = reward.Item.Id,
+                    ItemId = reward.RewardId,
                     Status = reward.Status,
                     IsPremium = true,
                     IsCurrentDay = reward.Day == currentDay
@@ -1202,12 +1202,35 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         _shopCategoryTabsContainer.RemoveAllChildren();
         _shopItemsPanel.RemoveAllChildren();
 
-        if (state.Items.Count == 0)
+        var ownedItemIds = new HashSet<string>();
+        if (_state != null)
+        {
+            foreach (var item in _state.Items)
+            {
+                if (!string.IsNullOrEmpty(item.ItemIdInGame))
+                    ownedItemIds.Add(item.ItemIdInGame);
+            }
+
+            foreach (var sub in _state.Subscribes)
+            {
+                foreach (var subItem in sub.Items)
+                {
+                    if (!string.IsNullOrEmpty(subItem.ItemIdInGame))
+                        ownedItemIds.Add(subItem.ItemIdInGame);
+                }
+            }
+        }
+
+        var availableItems = state.Items
+            .Where(i => !i.Owned && !ownedItemIds.Contains(i.ItemIdInGame))
+            .ToList();
+
+        if (availableItems.Count == 0)
         {
             var emptyLabel = new EmeraldLabel
             {
-                Text = "НЕТ ТОВАРОВ В МАГАЗИНЕ",
-                TextColor = Color.FromHex("#6d5a8a"),
+                Text = "ВСЕ ТОВАРЫ КУПЛЕНЫ!",
+                TextColor = Color.FromHex("#00FFAA"),
                 Alignment = EmeraldLabel.TextAlignment.Center,
                 Margin = new Thickness(0, 40, 0, 0)
             };
@@ -1215,7 +1238,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             return;
         }
 
-        _shopCategories = state.Items
+        _shopCategories = availableItems
             .Select(i => i.Category)
             .Distinct()
             .OrderBy(c => c)

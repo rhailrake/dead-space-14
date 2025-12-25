@@ -51,6 +51,8 @@ public sealed class DonateShopSystem : EntitySystem
         SubscribeNetworkEvent<DonateShopSpawnEvent>(OnSpawnRequest);
         SubscribeNetworkEvent<RequestEnergyShopItems>(OnRequestEnergyShop);
         SubscribeNetworkEvent<RequestPurchaseEnergyItem>(OnPurchaseEnergyItem);
+        SubscribeNetworkEvent<RequestDailyCalendar>(OnRequestDailyCalendar);
+        SubscribeNetworkEvent<RequestClaimCalendarReward>(OnClaimCalendarReward);
 
         _playMan.PlayerStatusChanged += OnPlayerStatusChanged;
 
@@ -266,6 +268,44 @@ public sealed class DonateShopSystem : EntitySystem
         }
     }
 
+    private void OnRequestDailyCalendar(RequestDailyCalendar msg, EntitySessionEventArgs args)
+    {
+        _ = PrepareCalendarUpdate(args);
+    }
+
+    private async Task PrepareCalendarUpdate(EntitySessionEventArgs args)
+    {
+        if (_donateApiService == null)
+        {
+            RaiseNetworkEvent(new UpdateDailyCalendarState(new DailyCalendarState("Сервис недоступен")), args.SenderSession.Channel);
+            return;
+        }
+
+        var userId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
+        var state = await _donateApiService.FetchDailyCalendarAsync(userId);
+
+        RaiseNetworkEvent(new UpdateDailyCalendarState(state), args.SenderSession.Channel);
+    }
+
+    private void OnClaimCalendarReward(RequestClaimCalendarReward msg, EntitySessionEventArgs args)
+    {
+        _ = ProcessClaimReward(msg, args);
+    }
+
+    private async Task ProcessClaimReward(RequestClaimCalendarReward msg, EntitySessionEventArgs args)
+    {
+        if (_donateApiService == null)
+        {
+            RaiseNetworkEvent(new ClaimCalendarRewardResult(new ClaimRewardResult(false, "Сервис недоступен")), args.SenderSession.Channel);
+            return;
+        }
+
+        var userId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
+        var result = await _donateApiService.ClaimCalendarRewardAsync(userId, msg.RewardId);
+
+        RaiseNetworkEvent(new ClaimCalendarRewardResult(result), args.SenderSession.Channel);
+    }
+
     private void OnSpawnRequest(DonateShopSpawnEvent msg, EntitySessionEventArgs args)
     {
         var userId = args.SenderSession.UserId.ToString();
@@ -323,7 +363,7 @@ public sealed class DonateShopSystem : EntitySystem
         if (_donateApiService == null)
             return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
 
-        var apiResponse = await _donateApiService!.FetchUserDataAsync(userId);
+        var apiResponse = await _donateApiService!.FetchUserDataAsync("b6a6fd9b-1383-482e-a39f-814190fe231f");
 
         if (apiResponse == null)
             return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");

@@ -312,7 +312,7 @@ public sealed class EmeraldCalendarDayCard : Control
 
         if (_isPremium)
         {
-            var premiumText = "★ PREMIUM";
+            var premiumText = "PREMIUM";
             var premiumWidth = GetTextWidth(premiumText, _statusFont);
             var premiumX = (PixelSize.X - premiumWidth) / 2f;
             var premiumY = statusY + _statusFont.GetLineHeight(UIScale) + 2f * UIScale;

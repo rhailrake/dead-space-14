@@ -325,7 +325,7 @@ public sealed class EmeraldRewardClaimPopup : Control
 
         if (_isPremium)
         {
-            var premiumText = "★ PREMIUM НАГРАДА ★";
+            var premiumText = "PREMIUM НАГРАДА";
             var premiumWidth = GetTextWidth(premiumText, _messageFont);
             var premiumX = (PixelSize.X - premiumWidth) / 2f;
             var premiumY = titleY + _titleFont.GetLineHeight(UIScale) + 8f * UIScale;
