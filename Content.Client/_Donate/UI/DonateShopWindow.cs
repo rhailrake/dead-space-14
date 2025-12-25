@@ -735,7 +735,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 RewardId = reward.RewardId,
                 Status = reward.Status,
                 IsPremium = false,
-                IsCurrentDay = reward.Day == currentDay
+                IsCurrentDay = reward.Day == currentDay,
+                IsHidden = reward.Item.IsHidden
             };
 
             dayCard.OnClaimRequest += (rewardId, isPremium) =>
@@ -763,64 +764,67 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
         if (!hasPremium)
         {
-            var lockedCard = new EmeraldPremiumLockedCard
+            var unlockBanner = new EmeraldPremiumUnlockBanner
             {
                 HorizontalExpand = true
             };
-            lockedCard.OnBuyPremiumPressed += () =>
+            unlockBanner.OnBuyPremiumPressed += () =>
             {
                 _url.OpenUri("https://deadspace14.net");
             };
-            _calendarPanel.AddChild(lockedCard);
+            _calendarPanel.AddChild(unlockBanner);
         }
-        else
-        {
-            if (state.PremiumPreview?.Today != null)
-            {
-                var todayPremiumCard = new EmeraldTodayRewardCard
-                {
-                    ItemName = state.PremiumPreview.Today.Item?.Name ?? "Unknown",
-                    StatusText = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО" : "ПОЛУЧЕНО",
-                    IsAvailable = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available,
-                    IsPremium = true,
-                    HorizontalExpand = true
-                };
-                _calendarPanel.AddChild(todayPremiumCard);
-            }
 
-            var premiumGrid = new GridContainer
+        if (state.PremiumPreview?.Today != null && hasPremium)
+        {
+            var todayPremiumCard = new EmeraldTodayRewardCard
             {
-                Columns = CalculateCalendarColumns(),
-                HorizontalExpand = true,
-                HSeparationOverride = 6,
-                VSeparationOverride = 6
+                ItemName = state.PremiumPreview.Today.Item?.Name ?? "Unknown",
+                StatusText = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available ? "ДОСТУПНО" : "ПОЛУЧЕНО",
+                IsAvailable = state.PremiumPreview.Today.Status == CalendarRewardStatus.Available,
+                IsPremium = true,
+                HorizontalExpand = true
+            };
+            _calendarPanel.AddChild(todayPremiumCard);
+        }
+
+        var premiumGrid = new GridContainer
+        {
+            Columns = CalculateCalendarColumns(),
+            HorizontalExpand = true,
+            HSeparationOverride = 6,
+            VSeparationOverride = 6
+        };
+
+        foreach (var reward in state.PremiumRewards)
+        {
+            var dayCard = new EmeraldCalendarDayCard
+            {
+                Day = reward.Day,
+                ItemName = reward.Item.Name,
+                ProtoId = reward.Item.ItemIdInGame,
+                RewardId = reward.RewardId,
+                Status = reward.Status,
+                IsPremium = true,
+                IsCurrentDay = reward.Day == currentDay,
+                IsHidden = reward.Item.IsHidden,
+                IsLocked = !hasPremium
             };
 
-            foreach (var reward in state.PremiumRewards)
+            if (hasPremium)
             {
-                var dayCard = new EmeraldCalendarDayCard
-                {
-                    Day = reward.Day,
-                    ItemName = reward.Item.Name,
-                    ProtoId = reward.Item.ItemIdInGame,
-                    RewardId = reward.RewardId,
-                    Status = reward.Status,
-                    IsPremium = true,
-                    IsCurrentDay = reward.Day == currentDay
-                };
-
                 dayCard.OnClaimRequest += (rewardId, isPremium) =>
                 {
                     if (_isClaimingReward) return;
                     _isClaimingReward = true;
                     _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestClaimCalendarReward(rewardId, isPremium));
                 };
-
-                premiumGrid.AddChild(dayCard);
             }
 
-            _calendarPanel.AddChild(premiumGrid);
+            premiumGrid.AddChild(dayCard);
         }
+
+        _calendarPanel.AddChild(premiumGrid);
     }
 
     public void ShowPurchaseResult(PurchaseResult result)

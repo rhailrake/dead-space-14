@@ -34,6 +34,7 @@ public sealed class EmeraldCalendarDayCard : Control
     private bool _isPremium;
     private bool _isCurrentDay;
     private bool _hovered;
+    private bool _isHidden;
 
     private readonly Color _bgColor = Color.FromHex("#1a0f2e");
     private readonly Color _borderColor = Color.FromHex("#4a3a6a");
@@ -47,6 +48,7 @@ public sealed class EmeraldCalendarDayCard : Control
     private readonly Color _currentDayGlow = Color.FromHex("#00FFAA");
     private readonly Color _spriteBgColor = Color.FromHex("#0f0a1e");
     private readonly Color _hoverGlowColor = Color.FromHex("#6d5a8a");
+    private readonly Color _lockedOverlayColor = Color.FromHex("#0f0a1e");
 
     private SpriteView? _spriteView;
     private TextureRect? _textureRect;
@@ -122,6 +124,29 @@ public sealed class EmeraldCalendarDayCard : Control
         }
     }
 
+    private bool _isLocked;
+
+    public bool IsLocked
+    {
+        get => _isLocked;
+        set
+        {
+            _isLocked = value;
+            InvalidateMeasure();
+        }
+    }
+
+    public bool IsHidden
+    {
+        get => _isHidden;
+        set
+        {
+            _isHidden = value;
+            UpdateSprite();
+            InvalidateMeasure();
+        }
+    }
+
     public EmeraldCalendarDayCard()
     {
         IoCManager.InjectDependencies(this);
@@ -167,6 +192,34 @@ public sealed class EmeraldCalendarDayCard : Control
     {
         if (_spriteView == null || _textureRect == null)
             return;
+
+        if (_isHidden)
+        {
+            _spriteView.Visible = false;
+            _textureRect.Visible = true;
+
+            if (_fallbackTexture == null)
+            {
+                try
+                {
+                    _fallbackTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/giftbox.png").Texture;
+                }
+                catch
+                {
+                    try
+                    {
+                        _fallbackTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/fallback.png").Texture;
+                    }
+                    catch
+                    {
+                        _fallbackTexture = null;
+                    }
+                }
+            }
+
+            _textureRect.Texture = _fallbackTexture;
+            return;
+        }
 
         if (!string.IsNullOrEmpty(_protoId) && _protoManager.HasIndex<EntityPrototype>(_protoId))
         {
@@ -267,7 +320,7 @@ public sealed class EmeraldCalendarDayCard : Control
 
         var nameY = 68f * UIScale;
         var maxNameWidth = PixelSize.X - 6f * UIScale;
-        var displayName = TruncateText(_itemName, maxNameWidth, _nameFont);
+        var displayName = _isHidden ? "???" : TruncateText(_itemName, maxNameWidth, _nameFont);
         var nameWidth = GetTextWidth(displayName, _nameFont);
         var nameX = (PixelSize.X - nameWidth) / 2f;
 
@@ -305,6 +358,12 @@ public sealed class EmeraldCalendarDayCard : Control
             var premiumX = (PixelSize.X - premiumWidth) / 2f;
             var premiumY = statusY + _statusFont.GetLineHeight(UIScale) + 1f * UIScale;
             handle.DrawString(_statusFont, new Vector2(premiumX, premiumY), premiumText, UIScale, _premiumColor);
+        }
+
+        if (_isLocked && _isPremium)
+        {
+            var overlayRect = new UIBox2(0, 0, PixelSize.X, PixelSize.Y);
+            handle.DrawRect(overlayRect, _lockedOverlayColor.WithAlpha(0.5f));
         }
     }
 
@@ -358,7 +417,7 @@ public sealed class EmeraldCalendarDayCard : Control
     protected override void MouseEntered()
     {
         base.MouseEntered();
-        if (_status == CalendarRewardStatus.Available)
+        if (_status == CalendarRewardStatus.Available && !_isLocked)
         {
             _hovered = true;
             UserInterfaceManager.HoverSound();
@@ -378,7 +437,7 @@ public sealed class EmeraldCalendarDayCard : Control
         if (args.Function != EngineKeyFunctions.UIClick)
             return;
 
-        if (_status == CalendarRewardStatus.Available)
+        if (_status == CalendarRewardStatus.Available && !_isLocked)
         {
             UserInterfaceManager.ClickSound();
             OnClaimRequest?.Invoke(_rewardId, _isPremium);
