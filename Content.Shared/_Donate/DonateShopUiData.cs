@@ -121,6 +121,7 @@ public sealed class DonateShopState
 [Serializable, NetSerializable]
 public sealed class DonateItemData
 {
+    public int UserItemId { get; }
     public int ItemId { get; }
     public string ItemName { get; }
     public string? ItemIdInGame { get; }
@@ -140,6 +141,7 @@ public sealed class DonateItemData
     public bool StelsHidden { get; }
 
     public DonateItemData(
+        int userItemId,
         int itemId,
         string itemName,
         string? itemIdInGame,
@@ -158,6 +160,7 @@ public sealed class DonateItemData
         string? lootboxRarity = null,
         bool stelsHidden = false)
     {
+        UserItemId = userItemId;
         ItemId = itemId;
         ItemName = itemName;
         ItemIdInGame = itemIdInGame;

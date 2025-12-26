@@ -34,7 +34,7 @@ public sealed class EmeraldItemCard : Control
     private bool _isTimeUp;
     private string? _sourceSubscription;
     private bool _isLootbox;
-    private int _itemId;
+    private int _userItemId;
     private bool _stelsHidden;
 
     private readonly Color _bgColor = Color.FromHex("#1a0f2e");
@@ -155,10 +155,10 @@ public sealed class EmeraldItemCard : Control
         }
     }
 
-    public int ItemId
+    public int UserItemId
     {
-        get => _itemId;
-        set => _itemId = value;
+        get => _userItemId;
+        set => _userItemId = value;
     }
 
     public bool StelsHidden
@@ -222,7 +222,7 @@ public sealed class EmeraldItemCard : Control
         {
             if (_isLootbox && !_isSpawned)
             {
-                OnOpenLootboxRequest?.Invoke(_itemName, _itemId, _stelsHidden);
+                OnOpenLootboxRequest?.Invoke(_itemName, _userItemId, _stelsHidden);
             }
         };
         AddChild(_openButton);

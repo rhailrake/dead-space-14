@@ -305,6 +305,17 @@ public sealed class DonateShopSystem : EntitySystem
         var result = await _donateApiService.ClaimCalendarRewardAsync(userId, msg.RewardId);
 
         RaiseNetworkEvent(new ClaimCalendarRewardResult(result), args.SenderSession.Channel);
+
+        if (result.Success)
+        {
+            _cache.Remove(userId);
+            await FetchAndCachePlayerData(userId);
+
+            if (_cache.TryGetValue(userId, out var newData))
+            {
+                RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
+            }
+        }
     }
 
     private void OnOpenLootbox(RequestOpenLootbox msg, EntitySessionEventArgs args)

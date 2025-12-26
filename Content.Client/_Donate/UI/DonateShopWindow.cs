@@ -1346,7 +1346,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 IsTimeUp = _state.IsTimeUp,
                 SourceSubscription = item.SourceSubscription,
                 IsLootbox = item.IsLootbox,
-                ItemId = item.ItemId,
+                UserItemId = item.UserItemId,
                 StelsHidden = item.StelsHidden
             };
 
@@ -1355,9 +1355,9 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 _entManager.EntityNetManager.SendSystemNetworkMessage(new DonateShopSpawnEvent(protoId));
             };
 
-            itemCard.OnOpenLootboxRequest += (name, itemId, stelsHidden) =>
+            itemCard.OnOpenLootboxRequest += (name, userItemId, stelsHidden) =>
             {
-                OnOpenLootbox?.Invoke(name, itemId, stelsHidden);
+                OnOpenLootbox?.Invoke(name, userItemId, stelsHidden);
             };
 
             _itemsGrid.AddChild(itemCard);
