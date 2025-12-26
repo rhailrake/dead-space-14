@@ -72,7 +72,9 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private bool _showingRewardResult;
     private ClaimRewardResult? _lastClaimResult;
 
-    public event Action<string, int, bool>? OnOpenLootbox;
+    private bool _showingLootboxOpener;
+    private EmeraldLootboxOpener? _lootboxOpener;
+    private Tab _previousTab = Tab.Inventory;
 
     public DonateShopWindow()
     {
@@ -428,6 +430,9 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
     private void SwitchTab(Tab tab)
     {
+        if (_showingLootboxOpener)
+            return;
+
         _profileTabButton.IsActive = tab == Tab.Profile;
         _calendarTabButton.IsActive = tab == Tab.Calendar;
         _inventoryTabButton.IsActive = tab == Tab.Inventory;
@@ -462,6 +467,80 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
                 }
                 break;
         }
+    }
+
+    public void OpenLootbox(string name, int userItemId, bool stelsHidden)
+    {
+        _showingLootboxOpener = true;
+        _previousTab = GetCurrentTab();
+
+        _contentContainer.RemoveAllChildren();
+
+        _profileTabButton.Disabled = true;
+        _calendarTabButton.Disabled = true;
+        _inventoryTabButton.Disabled = true;
+        _shopTabButton.Disabled = true;
+
+        var openerContainer = new BoxContainer
+        {
+            Orientation = BoxContainer.LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+            HorizontalAlignment = HAlignment.Center,
+            VerticalAlignment = VAlignment.Center
+        };
+
+        _lootboxOpener = new EmeraldLootboxOpener
+        {
+            HorizontalExpand = true,
+            VerticalExpand = true
+        };
+
+        _lootboxOpener.SetLootbox(name, userItemId, stelsHidden);
+
+        _lootboxOpener.OnOpenRequested += (itemId, stels) =>
+        {
+            _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestOpenLootbox(itemId, stels));
+        };
+
+        _lootboxOpener.OnCloseRequested += CloseLootboxOpener;
+
+        openerContainer.AddChild(_lootboxOpener);
+        _contentContainer.AddChild(openerContainer);
+    }
+
+    private void CloseLootboxOpener()
+    {
+        _showingLootboxOpener = false;
+        _lootboxOpener = null;
+
+        _profileTabButton.Disabled = false;
+        _calendarTabButton.Disabled = false;
+        _inventoryTabButton.Disabled = false;
+        _shopTabButton.Disabled = false;
+
+        RefreshAllData();
+
+        SwitchTab(_previousTab);
+    }
+
+    private void RefreshAllData()
+    {
+        _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
+    }
+
+    private Tab GetCurrentTab()
+    {
+        if (_profileTabButton.IsActive) return Tab.Profile;
+        if (_calendarTabButton.IsActive) return Tab.Calendar;
+        if (_inventoryTabButton.IsActive) return Tab.Inventory;
+        if (_shopTabButton.IsActive) return Tab.Shop;
+        return Tab.Profile;
+    }
+
+    public void HandleLootboxOpenResult(LootboxOpenResult result)
+    {
+        _lootboxOpener?.HandleOpenResult(result);
     }
 
     private void ShowCalendarLoading()
@@ -618,19 +697,11 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             _showingRewardResult = false;
             _lastClaimResult = null;
 
-            if (result.Success)
-            {
-                _calendarState = null;
-                _calendarLoading = true;
-                ShowCalendarLoading();
-                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestDailyCalendar());
-                _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
-            }
-            else
-            {
-                if (_calendarState != null)
-                    UpdateCalendarContent(_calendarState);
-            }
+            _calendarState = null;
+            _calendarLoading = true;
+            ShowCalendarLoading();
+            _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestDailyCalendar());
+            _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
         };
 
         mainContainer.AddChild(rewardDisplay);
@@ -880,6 +951,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             _shopLoading = true;
             ShowShopLoading();
             _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestEnergyShopItems());
+            _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
         };
         container.AddChild(backButton);
 
@@ -1357,7 +1429,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
             itemCard.OnOpenLootboxRequest += (name, userItemId, stelsHidden) =>
             {
-                OnOpenLootbox?.Invoke(name, userItemId, stelsHidden);
+                OpenLootbox(name, userItemId, stelsHidden);
             };
 
             _itemsGrid.AddChild(itemCard);

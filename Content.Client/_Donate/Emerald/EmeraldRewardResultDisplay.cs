@@ -33,19 +33,15 @@ public sealed class EmeraldRewardResultDisplay : Control
     private bool _isLootbox;
 
     private float _animationProgress;
-    private float _particleTime;
-    private readonly List<Particle> _particles = new();
     private bool _animationComplete;
-    private bool _particlesInitialized;
 
     private readonly Color _bgColor = Color.FromHex("#0f0a1e");
     private readonly Color _successColor = Color.FromHex("#00FFAA");
     private readonly Color _errorColor = Color.FromHex("#ff6b6b");
     private readonly Color _premiumColor = Color.FromHex("#ffd700");
     private readonly Color _textColor = Color.FromHex("#c0b3da");
-    private readonly Color _particleColor = Color.FromHex("#00FFAA");
-    private readonly Color _premiumParticleColor = Color.FromHex("#ffd700");
     private readonly Color _lootboxColor = Color.FromHex("#ffd700");
+    private readonly Color _borderColor = Color.FromHex("#4a3a6a");
 
     private SpriteView? _spriteView;
     private TextureRect? _textureRect;
@@ -167,28 +163,6 @@ public sealed class EmeraldRewardResultDisplay : Control
         AddChild(_closeButton);
     }
 
-    private void GenerateParticles()
-    {
-        _particles.Clear();
-        var random = new Random();
-
-        var centerX = PixelSize.X / 2f;
-        var centerY = PixelSize.Y / 2f;
-
-        for (int i = 0; i < 25; i++)
-        {
-            _particles.Add(new Particle
-            {
-                X = centerX + (random.NextSingle() - 0.5f) * 120f,
-                Y = centerY + (random.NextSingle() - 0.5f) * 120f,
-                VelocityX = (random.NextSingle() - 0.5f) * 80f,
-                VelocityY = -random.NextSingle() * 60f - 15f,
-                Size = random.NextSingle() * 3f + 1.5f,
-                Alpha = random.NextSingle() * 0.5f + 0.5f
-            });
-        }
-    }
-
     private void UpdateSprite()
     {
         if (_spriteView == null || _textureRect == null)
@@ -265,7 +239,7 @@ public sealed class EmeraldRewardResultDisplay : Control
 
     protected override Vector2 MeasureOverride(Vector2 availableSize)
     {
-        return new Vector2(300, 380);
+        return new Vector2(300, 340);
     }
 
     protected override Vector2 ArrangeOverride(Vector2 finalSize)
@@ -274,7 +248,7 @@ public sealed class EmeraldRewardResultDisplay : Control
         {
             var size = 80f;
             var x = (finalSize.X - size) / 2f;
-            var y = 90f;
+            var y = 80f;
             _spriteContainer.Arrange(new UIBox2(x, y, x + size, y + size));
         }
 
@@ -282,7 +256,7 @@ public sealed class EmeraldRewardResultDisplay : Control
         {
             var s = _closeButton.DesiredSize;
             var x = (finalSize.X - s.X) / 2f;
-            var y = finalSize.Y - s.Y - 50f;
+            var y = finalSize.Y - s.Y - 40f;
             _closeButton.Arrange(new UIBox2(x, y, x + s.X, y + s.Y));
         }
 
@@ -293,40 +267,11 @@ public sealed class EmeraldRewardResultDisplay : Control
     {
         base.FrameUpdate(args);
 
-        if (!_particlesInitialized && PixelSize.X > 0 && PixelSize.Y > 0)
-        {
-            GenerateParticles();
-            _particlesInitialized = true;
-        }
-
         if (!_animationComplete)
         {
             _animationProgress = Math.Min(1f, _animationProgress + (float)args.DeltaSeconds * 2f);
             if (_animationProgress >= 1f)
                 _animationComplete = true;
-        }
-
-        _particleTime += (float)args.DeltaSeconds;
-        var random = new Random();
-
-        foreach (var particle in _particles)
-        {
-            particle.X += particle.VelocityX * (float)args.DeltaSeconds;
-            particle.Y += particle.VelocityY * (float)args.DeltaSeconds;
-            particle.VelocityY += 25f * (float)args.DeltaSeconds;
-            particle.Alpha = Math.Max(0f, particle.Alpha - (float)args.DeltaSeconds * 0.25f);
-
-            if (particle.Y > PixelSize.Y || particle.Alpha <= 0f)
-            {
-                var cx = PixelSize.X / 2f;
-                var cy = PixelSize.Y / 2f;
-
-                particle.X = cx + (random.NextSingle() - 0.5f) * 120f;
-                particle.Y = cy;
-                particle.VelocityX = (random.NextSingle() - 0.5f) * 80f;
-                particle.VelocityY = -random.NextSingle() * 60f - 15f;
-                particle.Alpha = random.NextSingle() * 0.5f + 0.5f;
-            }
         }
     }
 
@@ -335,19 +280,12 @@ public sealed class EmeraldRewardResultDisplay : Control
         var rect = new UIBox2(0, 0, PixelSize.X, PixelSize.Y);
         handle.DrawRect(rect, _bgColor.WithAlpha(0.95f));
 
-        var pColor = _isLootbox ? _lootboxColor : _isPremium ? _premiumParticleColor : _particleColor;
-        foreach (var p in _particles)
-        {
-            if (p.Alpha <= 0f) continue;
-
-            handle.DrawRect(
-                new UIBox2(
-                    p.X - p.Size / 2f,
-                    p.Y - p.Size / 2f,
-                    p.X + p.Size / 2f,
-                    p.Y + p.Size / 2f),
-                pColor.WithAlpha(p.Alpha));
-        }
+        var borderThickness = 2f * UIScale;
+        var bc = _isLootbox ? _lootboxColor : _isPremium ? _premiumColor : _isSuccess ? _successColor : _errorColor;
+        handle.DrawRect(new UIBox2(rect.Left, rect.Top, rect.Right, rect.Top + borderThickness), bc);
+        handle.DrawRect(new UIBox2(rect.Left, rect.Bottom - borderThickness, rect.Right, rect.Bottom), bc);
+        handle.DrawRect(new UIBox2(rect.Left, rect.Top, rect.Left + borderThickness, rect.Bottom), bc);
+        handle.DrawRect(new UIBox2(rect.Right - borderThickness, rect.Top, rect.Right, rect.Bottom), bc);
 
         var accent = _isLootbox ? _lootboxColor : _isPremium ? _premiumColor : _isSuccess ? _successColor : _errorColor;
 
@@ -359,7 +297,7 @@ public sealed class EmeraldRewardResultDisplay : Control
 
         handle.DrawString(_titleFont, new Vector2(titleX, titleY), title, UIScale * scale, accent);
 
-        var nameY = 185f * UIScale;
+        var nameY = 175f * UIScale;
         var nameWidth = GetTextWidth(_itemName, _nameFont);
         var nameColor = _isLootbox ? _lootboxColor : _textColor;
         handle.DrawString(_nameFont,
@@ -377,15 +315,5 @@ public sealed class EmeraldRewardResultDisplay : Control
                 w += m.Value.Advance;
         }
         return w;
-    }
-
-    private sealed class Particle
-    {
-        public float X;
-        public float Y;
-        public float VelocityX;
-        public float VelocityY;
-        public float Size;
-        public float Alpha;
     }
 }
