@@ -87,9 +87,7 @@ public sealed class EmeraldLootboxOpenWindow : EmeraldDefaultWindow
         IoCManager.InjectDependencies(this);
 
         Title = "ОТКРЫТИЕ ЛУТБОКСА";
-        MinSize = new Vector2(400, 500);
-        SetSize = new Vector2(400, 500);
-        Resizable = false;
+        MinSize = SetSize = new Vector2(400, 548);
 
         var fontRes = _resourceCache.GetResource<FontResource>("/Fonts/Bedstead/Bedstead.otf");
         _titleFont = new VectorFont(fontRes, TitleFontSize);
@@ -105,25 +103,25 @@ public sealed class EmeraldLootboxOpenWindow : EmeraldDefaultWindow
     {
         try
         {
-            _commonTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/Lootbox/common.png").Texture;
+            _commonTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/common.png").Texture;
         }
         catch { _commonTexture = null; }
 
         try
         {
-            _epicTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/Lootbox/epic.png").Texture;
+            _epicTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/epic.png").Texture;
         }
         catch { _epicTexture = null; }
 
         try
         {
-            _mythicTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/Lootbox/mythic.png").Texture;
+            _mythicTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/mythic.png").Texture;
         }
         catch { _mythicTexture = null; }
 
         try
         {
-            _legendaryTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/Lootbox/legendary.png").Texture;
+            _legendaryTexture = _resourceCache.GetResource<TextureResource>("/Textures/Interface/legendary.png").Texture;
         }
         catch { _legendaryTexture = null; }
     }

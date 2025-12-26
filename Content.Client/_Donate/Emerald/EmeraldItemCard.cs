@@ -220,7 +220,7 @@ public sealed class EmeraldItemCard : Control
         };
         _openButton.OnPressed += () =>
         {
-            if (_isLootbox && _isActive && !_isSpawned)
+            if (_isLootbox && !_isSpawned)
             {
                 OnOpenLootboxRequest?.Invoke(_itemName, _itemId, _stelsHidden);
             }
@@ -233,7 +233,7 @@ public sealed class EmeraldItemCard : Control
         if (_openButton == null)
             return;
 
-        _openButton.Visible = _isLootbox && _isActive && !_isSpawned && !_isTimeUp;
+        _openButton.Visible = _isLootbox && !_isSpawned && !_isTimeUp;
     }
 
     private void UpdateSprite()
