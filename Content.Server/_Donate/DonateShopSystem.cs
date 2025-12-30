@@ -31,6 +31,9 @@ public sealed class DonateShopSystem : EntitySystem
 
     private readonly ISawmill _sawmill = Logger.GetSawmill("donate.uptime");
 
+    private const bool Testing = true;
+    private const string TestUserId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
+
     private readonly Dictionary<string, DonateShopState> _cache = new();
     private readonly Dictionary<string, HashSet<string>> _spawnedItems = new();
     private IDonateApiService? _donateApiService;
@@ -42,6 +45,8 @@ public sealed class DonateShopSystem : EntitySystem
     private EnergyShopState? _energyShopCache;
     private TimeSpan _energyShopCacheTime = TimeSpan.Zero;
     private static readonly TimeSpan EnergyShopCacheDuration = TimeSpan.FromMinutes(5);
+
+    private string GetApiUserId(string visitorId) => Testing ? TestUserId : visitorId;
 
     public override void Initialize()
     {
@@ -94,31 +99,32 @@ public sealed class DonateShopSystem : EntitySystem
             _donateApiService.AddSpawnBanTimerForUser(session.UserId.ToString());
     }
 
-    private async Task SendUptimeAsync(string userId, DateTime entryTime, DateTime exitTime)
+    private async Task SendUptimeAsync(string visitorId, DateTime entryTime, DateTime exitTime)
     {
         if (_donateApiService == null)
         {
-            _sawmill.Warning($"API service is null, queueing for retry: {userId}");
-            _pendingSessions.Add((userId, entryTime, exitTime));
+            _sawmill.Warning($"API service is null, queueing for retry: {visitorId}");
+            _pendingSessions.Add((visitorId, entryTime, exitTime));
             return;
         }
 
+        var apiUserId = GetApiUserId(visitorId);
         var duration = (exitTime - entryTime).TotalMinutes;
-        var result = await _donateApiService.SendUptimeAsync(userId, entryTime, exitTime);
+        var result = await _donateApiService.SendUptimeAsync(apiUserId, entryTime, exitTime);
 
         switch (result)
         {
             case UptimeResult.Success:
-                _sawmill.Info($"Uptime sent: {userId}, duration: {duration:F1} min");
+                _sawmill.Info($"Uptime sent: {visitorId}, duration: {duration:F1} min");
                 break;
 
             case UptimeResult.NotFound:
-                _sawmill.Info($"Uptime ignored (404): {userId}, duration: {duration:F1} min");
+                _sawmill.Info($"Uptime ignored (404): {visitorId}, duration: {duration:F1} min");
                 break;
 
             case UptimeResult.NeedsRetry:
-                _sawmill.Warning($"Uptime send failed, queueing for retry: {userId}, duration: {duration:F1} min");
-                _pendingSessions.Add((userId, entryTime, exitTime));
+                _sawmill.Warning($"Uptime send failed, queueing for retry: {visitorId}, duration: {duration:F1} min");
+                _pendingSessions.Add((visitorId, entryTime, exitTime));
                 break;
         }
     }
@@ -134,39 +140,40 @@ public sealed class DonateShopSystem : EntitySystem
 
     private void OnPlayerStatusChanged(object? sender, SessionStatusEventArgs e)
     {
-        var userId = e.Session.UserId.ToString();
+        var visitorId = e.Session.UserId.ToString();
 
         if (e.NewStatus == SessionStatus.Connected)
         {
-            _ = FetchAndCachePlayerData(userId);
-            _playerEntryTimes[userId] = DateTime.UtcNow;
-            _sawmill.Info($"Player connected: {userId}");
+            _ = FetchAndCachePlayerData(visitorId);
+            _playerEntryTimes[visitorId] = DateTime.UtcNow;
+            _sawmill.Info($"Player connected: {visitorId}");
         }
         else if (e.NewStatus == SessionStatus.Disconnected)
         {
-            _cache.Remove(userId);
+            _cache.Remove(visitorId);
 
-            if (_playerEntryTimes.TryGetValue(userId, out var entryTime))
+            if (_playerEntryTimes.TryGetValue(visitorId, out var entryTime))
             {
-                _playerEntryTimes.Remove(userId);
+                _playerEntryTimes.Remove(visitorId);
                 var exitTime = DateTime.UtcNow;
-                _sawmill.Info($"Player disconnected: {userId}, sending uptime");
-                _ = SendUptimeAsync(userId, entryTime, exitTime);
+                _sawmill.Info($"Player disconnected: {visitorId}, sending uptime");
+                _ = SendUptimeAsync(visitorId, entryTime, exitTime);
             }
         }
     }
 
-    private async Task FetchAndCachePlayerData(string userId)
+    private async Task FetchAndCachePlayerData(string visitorId)
     {
-        var data = await FetchDonateData(userId);
+        var apiUserId = GetApiUserId(visitorId);
+        var data = await FetchDonateData(apiUserId);
 
         if (data.IsRegistered != false)
         {
-            if (_spawnedItems.TryGetValue(userId, out var spawned))
+            if (_spawnedItems.TryGetValue(visitorId, out var spawned))
             {
                 data.SpawnedItems = spawned;
             }
-            _cache[userId] = data;
+            _cache[visitorId] = data;
         }
     }
 
@@ -177,18 +184,19 @@ public sealed class DonateShopSystem : EntitySystem
 
     private async Task PrepareUpdate(EntitySessionEventArgs args)
     {
-        var userId = args.SenderSession.UserId.ToString();
+        var visitorId = args.SenderSession.UserId.ToString();
 
-        if (!_cache.TryGetValue(userId, out var data))
+        if (!_cache.TryGetValue(visitorId, out var data))
         {
-            data = await FetchDonateData(userId);
+            var apiUserId = GetApiUserId(visitorId);
+            data = await FetchDonateData(apiUserId);
 
             if (data.IsRegistered != false)
             {
-                if (_spawnedItems.TryGetValue(userId, out var spawned))
+                if (_spawnedItems.TryGetValue(visitorId, out var spawned))
                     data.SpawnedItems = spawned;
 
-                _cache[userId] = data;
+                _cache[visitorId] = data;
             }
         }
 
@@ -237,7 +245,7 @@ public sealed class DonateShopSystem : EntitySystem
 
     private async Task ProcessPurchase(RequestPurchaseEnergyItem msg, EntitySessionEventArgs args)
     {
-        var sessionUserId = args.SenderSession.UserId.ToString();
+        var visitorId = args.SenderSession.UserId.ToString();
 
         if (_donateApiService == null)
         {
@@ -245,7 +253,7 @@ public sealed class DonateShopSystem : EntitySystem
             return;
         }
 
-        if (!_cache.TryGetValue(sessionUserId, out var cachedData) || cachedData.User == 0)
+        if (!_cache.TryGetValue(visitorId, out var cachedData) || cachedData.User == 0)
         {
             RaiseNetworkEvent(new PurchaseEnergyItemResult(new PurchaseResult(false, "Данные пользователя не загружены")), args.SenderSession.Channel);
             return;
@@ -257,10 +265,10 @@ public sealed class DonateShopSystem : EntitySystem
 
         if (result.Success)
         {
-            _cache.Remove(sessionUserId);
-            await FetchAndCachePlayerData(sessionUserId);
+            _cache.Remove(visitorId);
+            await FetchAndCachePlayerData(visitorId);
 
-            if (_cache.TryGetValue(sessionUserId, out var newData))
+            if (_cache.TryGetValue(visitorId, out var newData))
             {
                 RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
             }
@@ -282,8 +290,9 @@ public sealed class DonateShopSystem : EntitySystem
             return;
         }
 
-        var userId = args.SenderSession.UserId.ToString();
-        var state = await _donateApiService.FetchDailyCalendarAsync(userId);
+        var visitorId = args.SenderSession.UserId.ToString();
+        var apiUserId = GetApiUserId(visitorId);
+        var state = await _donateApiService.FetchDailyCalendarAsync(apiUserId);
 
         RaiseNetworkEvent(new UpdateDailyCalendarState(state), args.SenderSession.Channel);
     }
@@ -301,17 +310,18 @@ public sealed class DonateShopSystem : EntitySystem
             return;
         }
 
-        var userId = args.SenderSession.UserId.ToString();
-        var result = await _donateApiService.ClaimCalendarRewardAsync(userId, msg.RewardId);
+        var visitorId = args.SenderSession.UserId.ToString();
+        var apiUserId = GetApiUserId(visitorId);
+        var result = await _donateApiService.ClaimCalendarRewardAsync(apiUserId, msg.RewardId);
 
         RaiseNetworkEvent(new ClaimCalendarRewardResult(result), args.SenderSession.Channel);
 
         if (result.Success)
         {
-            _cache.Remove(userId);
-            await FetchAndCachePlayerData(userId);
+            _cache.Remove(visitorId);
+            await FetchAndCachePlayerData(visitorId);
 
-            if (_cache.TryGetValue(userId, out var newData))
+            if (_cache.TryGetValue(visitorId, out var newData))
             {
                 RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
             }
@@ -331,17 +341,18 @@ public sealed class DonateShopSystem : EntitySystem
             return;
         }
 
-        var userId = args.SenderSession.UserId.ToString();
-        var result = await _donateApiService.OpenLootboxAsync(userId, msg.UserItemId, msg.StelsOpen);
+        var visitorId = args.SenderSession.UserId.ToString();
+        var apiUserId = GetApiUserId(visitorId);
+        var result = await _donateApiService.OpenLootboxAsync(apiUserId, msg.UserItemId, msg.StelsOpen);
 
         RaiseNetworkEvent(new LootboxOpenedResult(result), args.SenderSession.Channel);
 
         if (result.Success)
         {
-            _cache.Remove(userId);
-            await FetchAndCachePlayerData(userId);
+            _cache.Remove(visitorId);
+            await FetchAndCachePlayerData(visitorId);
 
-            if (_cache.TryGetValue(userId, out var newData))
+            if (_cache.TryGetValue(visitorId, out var newData))
             {
                 RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
             }
@@ -350,9 +361,9 @@ public sealed class DonateShopSystem : EntitySystem
 
     private void OnSpawnRequest(DonateShopSpawnEvent msg, EntitySessionEventArgs args)
     {
-        var userId = args.SenderSession.UserId.ToString();
+        var visitorId = args.SenderSession.UserId.ToString();
 
-        if (!_cache.TryGetValue(userId, out var state))
+        if (!_cache.TryGetValue(visitorId, out var state))
             return;
 
         if (state.SpawnedItems.Contains(msg.ProtoId))
@@ -389,23 +400,23 @@ public sealed class DonateShopSystem : EntitySystem
         var spawnedEntity = Spawn(msg.ProtoId, _transform.GetMapCoordinates(playerTransform));
         _handsSystem.TryPickupAnyHand(playerEntity, spawnedEntity);
 
-        if (!_spawnedItems.ContainsKey(userId))
+        if (!_spawnedItems.ContainsKey(visitorId))
         {
-            _spawnedItems[userId] = new HashSet<string>();
+            _spawnedItems[visitorId] = new HashSet<string>();
         }
 
-        _spawnedItems[userId].Add(msg.ProtoId);
+        _spawnedItems[visitorId].Add(msg.ProtoId);
         state.SpawnedItems.Add(msg.ProtoId);
 
         RaiseNetworkEvent(new UpdateDonateShopUIState(state), args.SenderSession.Channel);
     }
 
-    private async Task<DonateShopState> FetchDonateData(string userId)
+    private async Task<DonateShopState> FetchDonateData(string apiUserId)
     {
         if (_donateApiService == null)
             return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
 
-        var apiResponse = await _donateApiService.FetchUserDataAsync(userId);
+        var apiResponse = await _donateApiService.FetchUserDataAsync(apiUserId);
 
         if (apiResponse == null)
             return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
@@ -413,13 +424,13 @@ public sealed class DonateShopSystem : EntitySystem
         return apiResponse;
     }
 
-    public async Task RefreshPlayerCache(string userId)
+    public async Task RefreshPlayerCache(string visitorId)
     {
-        await FetchAndCachePlayerData(userId);
+        await FetchAndCachePlayerData(visitorId);
     }
 
-    public DonateShopState? GetCachedData(string userId)
+    public DonateShopState? GetCachedData(string visitorId)
     {
-        return _cache.TryGetValue(userId, out var data) ? data : null;
+        return _cache.TryGetValue(visitorId, out var data) ? data : null;
     }
 }
