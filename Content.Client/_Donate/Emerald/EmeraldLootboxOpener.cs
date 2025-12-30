@@ -17,12 +17,17 @@ public sealed class EmeraldLootboxOpener : Control
     private const int NameFontSize = 12;
     private const int RarityFontSize = 10;
 
-    private const float CardWidth = 100f;
-    private const float CardHeight = 130f;
-    private const float CardSpacing = 8f;
-    private const float StripHeight = 160f;
+    private const float CardWidth = 110f;
+    private const float CardHeight = 140f;
+    private const float CardSpacing = 6f;
+    private const float StripHeight = 170f;
 
-    private const int TotalScrollCards = 50;
+    private const int VisibleCards = 60;
+    private const int WinningCardPosition = 45;
+
+    private const float SlowScrollDuration = 5.5f;
+    private const float FastScrollDuration = 1.2f;
+    private const float RevealDuration = 0.5f;
 
     private Font _titleFont = default!;
     private Font _nameFont = default!;
@@ -50,20 +55,20 @@ public sealed class EmeraldLootboxOpener : Control
 
     private LootboxOpenResult? _result;
     private List<LootboxRarity> _scrollCards = new();
-    private int _winningCardIndex;
 
     private float _scrollOffset;
     private float _targetScrollOffset;
-    private float _scrollVelocity;
     private float _animationTime;
     private float _revealScale = 1f;
-    private float _revealAlpha = 1f;
+    private float _currentScrollDuration;
 
     private EmeraldButton _openButton = default!;
     private EmeraldButton _closeButton = default!;
     private EmeraldLabel _statusLabel = default!;
     private EmeraldLabel _titleLabel = default!;
     private EmeraldLabel _resultLabel = default!;
+
+    private Random _random = new();
 
     public event Action<int, bool>? OnOpenRequested;
     public event Action? OnCloseRequested;
@@ -146,8 +151,8 @@ public sealed class EmeraldLootboxOpener : Control
         _closeButton.Measure(availableSize);
 
         return new Vector2(
-            float.IsPositiveInfinity(availableSize.X) ? 700 : availableSize.X,
-            350
+            float.IsPositiveInfinity(availableSize.X) ? 750 : availableSize.X,
+            380
         );
     }
 
@@ -159,13 +164,13 @@ public sealed class EmeraldLootboxOpener : Control
         var stripY = 50f;
         var stripBottom = stripY + StripHeight;
 
-        var statusY = stripBottom + 15f;
+        var statusY = stripBottom + 20f;
         _statusLabel.Arrange(new UIBox2(0, statusY, finalSize.X, statusY + _statusLabel.DesiredSize.Y));
 
-        var resultY = statusY + 25f;
+        var resultY = statusY + 28f;
         _resultLabel.Arrange(new UIBox2(0, resultY, finalSize.X, resultY + _resultLabel.DesiredSize.Y));
 
-        var buttonY = finalSize.Y - 50f;
+        var buttonY = finalSize.Y - 55f;
         var buttonX = (finalSize.X - _openButton.DesiredSize.X) / 2f;
         _openButton.Arrange(new UIBox2(buttonX, buttonY, buttonX + _openButton.DesiredSize.X, buttonY + _openButton.DesiredSize.Y));
 
@@ -185,9 +190,11 @@ public sealed class EmeraldLootboxOpener : Control
         _scrollCards.Clear();
         _scrollOffset = 0;
         _animationTime = 0;
+        _random = new Random();
 
         _titleLabel.Text = $"ОТКРЫТИЕ: {name.ToUpper()}";
         _statusLabel.Text = "Нажмите ОТКРЫТЬ чтобы испытать удачу";
+        _statusLabel.TextColor = _textColor;
         _resultLabel.Visible = false;
         _resultLabel.Text = "";
 
@@ -201,23 +208,23 @@ public sealed class EmeraldLootboxOpener : Control
     private void GeneratePreviewCards()
     {
         _scrollCards.Clear();
-        var random = new Random(42);
 
-        for (var i = 0; i < 15; i++)
+        for (var i = 0; i < VisibleCards; i++)
         {
-            var r = random.NextSingle();
-            LootboxRarity rarity;
-            if (r < 0.5f)
-                rarity = LootboxRarity.Common;
-            else if (r < 0.75f)
-                rarity = LootboxRarity.Epic;
-            else if (r < 0.9f)
-                rarity = LootboxRarity.Mythic;
-            else
-                rarity = LootboxRarity.Legendary;
-
-            _scrollCards.Add(rarity);
+            _scrollCards.Add(GetRandomRarity());
         }
+    }
+
+    private LootboxRarity GetRandomRarity()
+    {
+        var r = _random.NextSingle();
+        if (r < 0.55f)
+            return LootboxRarity.Common;
+        if (r < 0.80f)
+            return LootboxRarity.Epic;
+        if (r < 0.95f)
+            return LootboxRarity.Mythic;
+        return LootboxRarity.Legendary;
     }
 
     private void OnOpenPressed()
@@ -247,101 +254,47 @@ public sealed class EmeraldLootboxOpener : Control
         }
 
         var winRarity = result.Item?.Rarity ?? LootboxRarity.Common;
+        var useSlowAnimation = result.StelsOpen;
 
-        if (result.StelsOpen && result.Sequence != null && result.Sequence.Count > 0)
-        {
-            GenerateScrollCards(result.Sequence, winRarity);
-            StartScrollAnimation();
-        }
-        else
-        {
-            GenerateScrollCardsInstant(winRarity);
-            ShowInstantResult();
-        }
+        GenerateScrollCardsWithWinner(winRarity, result.Sequence);
+        StartScrollAnimation(useSlowAnimation);
     }
 
-    private void GenerateScrollCards(List<LootboxRarity> sequence, LootboxRarity winRarity)
+    private void GenerateScrollCardsWithWinner(LootboxRarity winRarity, List<LootboxRarity>? sequence)
     {
         _scrollCards.Clear();
-        var random = new Random();
 
-        foreach (var rarity in sequence)
+        if (sequence != null && sequence.Count > 0)
         {
-            _scrollCards.Add(rarity);
+            foreach (var rarity in sequence)
+            {
+                _scrollCards.Add(rarity);
+            }
         }
 
-        while (_scrollCards.Count < TotalScrollCards)
+        while (_scrollCards.Count < VisibleCards)
         {
-            var r = random.NextSingle();
-            LootboxRarity rarity;
-            if (r < 0.5f)
-                rarity = LootboxRarity.Common;
-            else if (r < 0.75f)
-                rarity = LootboxRarity.Epic;
-            else if (r < 0.9f)
-                rarity = LootboxRarity.Mythic;
-            else
-                rarity = LootboxRarity.Legendary;
-
-            _scrollCards.Add(rarity);
+            _scrollCards.Add(GetRandomRarity());
         }
 
-        _winningCardIndex = TotalScrollCards - 8 + random.Next(5);
-        if (_winningCardIndex >= _scrollCards.Count)
-            _winningCardIndex = _scrollCards.Count - 3;
-
-        _scrollCards[_winningCardIndex] = winRarity;
+        if (WinningCardPosition < _scrollCards.Count)
+        {
+            _scrollCards[WinningCardPosition] = winRarity;
+        }
     }
 
-    private void GenerateScrollCardsInstant(LootboxRarity winRarity)
-    {
-        _scrollCards.Clear();
-        var random = new Random();
-
-        for (var i = 0; i < 15; i++)
-        {
-            var r = random.NextSingle();
-            LootboxRarity rarity;
-            if (r < 0.5f)
-                rarity = LootboxRarity.Common;
-            else if (r < 0.75f)
-                rarity = LootboxRarity.Epic;
-            else if (r < 0.9f)
-                rarity = LootboxRarity.Mythic;
-            else
-                rarity = LootboxRarity.Legendary;
-
-            _scrollCards.Add(rarity);
-        }
-
-        _winningCardIndex = 7;
-        _scrollCards[_winningCardIndex] = winRarity;
-    }
-
-    private void StartScrollAnimation()
+    private void StartScrollAnimation(bool slowMode)
     {
         _state = OpenerState.Scrolling;
         _animationTime = 0;
         _scrollOffset = 0;
 
-        var cardFullWidth = CardWidth + CardSpacing;
-        var centerOffset = Size.X / 2f - CardWidth / 2f;
-        _targetScrollOffset = _winningCardIndex * cardFullWidth - centerOffset;
+        _currentScrollDuration = slowMode ? SlowScrollDuration : FastScrollDuration;
 
-        _scrollVelocity = 2000f;
-        _statusLabel.Text = "";
-    }
+        var cardFullWidth = (CardWidth + CardSpacing) * UIScale;
+        var randomOffset = (_random.NextSingle() - 0.5f) * cardFullWidth * 0.6f;
 
-    private void ShowInstantResult()
-    {
-        _state = OpenerState.Revealing;
-        _animationTime = 0;
-        _revealScale = 0.3f;
-        _revealAlpha = 0f;
-
-        var cardFullWidth = CardWidth + CardSpacing;
-        var centerOffset = Size.X / 2f - CardWidth / 2f;
-        _scrollOffset = _winningCardIndex * cardFullWidth - centerOffset;
+        _targetScrollOffset = WinningCardPosition * cardFullWidth + randomOffset;
 
         _statusLabel.Text = "";
     }
@@ -366,28 +319,22 @@ public sealed class EmeraldLootboxOpener : Control
     {
         _animationTime += delta;
 
-        var remaining = _targetScrollOffset - _scrollOffset;
+        var t = Math.Min(1f, _animationTime / _currentScrollDuration);
 
-        if (remaining > 1f)
-        {
-            var progress = Math.Min(1f, _scrollOffset / _targetScrollOffset);
-            var easeOut = 1f - MathF.Pow(1f - progress, 3f);
-            var speedFactor = 1f - easeOut * 0.95f;
-            var currentVelocity = Math.Max(30f, _scrollVelocity * speedFactor);
+        var eased = EaseOutQuint(t);
 
-            _scrollOffset += currentVelocity * delta;
+        _scrollOffset = eased * _targetScrollOffset;
 
-            if (_scrollOffset >= _targetScrollOffset - 0.5f)
-            {
-                _scrollOffset = _targetScrollOffset;
-                FinishScrollAnimation();
-            }
-        }
-        else
+        if (t >= 1f)
         {
             _scrollOffset = _targetScrollOffset;
             FinishScrollAnimation();
         }
+    }
+
+    private float EaseOutQuint(float t)
+    {
+        return 1f - MathF.Pow(1f - t, 5f);
     }
 
     private void FinishScrollAnimation()
@@ -395,17 +342,16 @@ public sealed class EmeraldLootboxOpener : Control
         _state = OpenerState.Revealing;
         _animationTime = 0;
         _revealScale = 1f;
-        _revealAlpha = 1f;
     }
 
     private void UpdateRevealAnimation(float delta)
     {
         _animationTime += delta;
 
-        _revealScale = Math.Min(1.15f, 0.3f + _animationTime * 2f);
-        _revealAlpha = Math.Min(1f, _animationTime * 3f);
+        var t = Math.Min(1f, _animationTime / RevealDuration);
+        _revealScale = 1f + MathF.Sin(t * MathF.PI) * 0.15f;
 
-        if (_animationTime > 0.6f && _state == OpenerState.Revealing)
+        if (t >= 1f)
         {
             _state = OpenerState.Complete;
             _revealScale = 1.1f;
@@ -458,82 +404,46 @@ public sealed class EmeraldLootboxOpener : Control
         var centerX = PixelSize.X / 2f;
         var cardY = stripY + (stripHeight - cardHeight) / 2f;
 
-        var scaledScrollOffset = _scrollOffset * UIScale;
-
         if (_scrollCards.Count > 0)
         {
-            var startIndex = (int)(scaledScrollOffset / cardFullWidth) - 6;
-            var endIndex = startIndex + 14;
+            var firstCardX = centerX - cardWidth / 2f - _scrollOffset;
 
-            startIndex = Math.Max(0, startIndex);
-            endIndex = Math.Min(_scrollCards.Count, endIndex);
-
-            for (var i = startIndex; i < endIndex; i++)
+            for (var i = 0; i < _scrollCards.Count; i++)
             {
-                var cardX = i * cardFullWidth - scaledScrollOffset + centerX - cardWidth / 2f;
+                var cardX = firstCardX + i * cardFullWidth;
 
-                if (cardX + cardWidth < -50 || cardX > PixelSize.X + 50)
+                if (cardX + cardWidth < -cardWidth || cardX > PixelSize.X + cardWidth)
                     continue;
 
                 var distanceFromCenter = Math.Abs(cardX + cardWidth / 2f - centerX);
                 var maxDistance = PixelSize.X / 2f;
-                var alpha = 1f - Math.Min(0.6f, distanceFromCenter / maxDistance * 0.6f);
+                var alpha = 1f - Math.Min(0.7f, (distanceFromCenter / maxDistance) * 0.7f);
 
-                var isWinningCard = i == _winningCardIndex && (_state == OpenerState.Complete || _state == OpenerState.Revealing);
+                var isWinningCard = i == WinningCardPosition && (_state == OpenerState.Complete || _state == OpenerState.Revealing);
                 var scale = isWinningCard ? _revealScale : 1f;
-                var cardAlpha = isWinningCard ? Math.Max(alpha, _revealAlpha) : alpha;
+                var cardAlpha = isWinningCard ? 1f : alpha;
 
-                if (scale != 1f)
-                {
-                    var scaledWidth = cardWidth * scale;
-                    var scaledHeight = cardHeight * scale;
-                    var offsetX = (scaledWidth - cardWidth) / 2f;
-                    var offsetY = (scaledHeight - cardHeight) / 2f;
-                    DrawCard(handle, cardX - offsetX, cardY - offsetY, scaledWidth, scaledHeight, _scrollCards[i], cardAlpha, isWinningCard);
-                }
-                else
-                {
-                    DrawCard(handle, cardX, cardY, cardWidth, cardHeight, _scrollCards[i], cardAlpha, isWinningCard);
-                }
+                DrawCardAtPosition(handle, cardX, cardY, cardWidth, cardHeight, _scrollCards[i], cardAlpha, scale, isWinningCard);
             }
         }
 
-        var indicatorWidth = 4f * UIScale;
-        var indicatorX = centerX - indicatorWidth / 2f;
-        var triangleSize = 12f * UIScale;
-
-        var topTriangle = new Vector2[]
-        {
-            new(indicatorX + indicatorWidth / 2f, stripRect.Top + triangleSize),
-            new(indicatorX - triangleSize / 2f + indicatorWidth / 2f, stripRect.Top),
-            new(indicatorX + triangleSize / 2f + indicatorWidth / 2f, stripRect.Top)
-        };
-
-        var bottomTriangle = new Vector2[]
-        {
-            new(indicatorX + indicatorWidth / 2f, stripRect.Bottom - triangleSize),
-            new(indicatorX - triangleSize / 2f + indicatorWidth / 2f, stripRect.Bottom),
-            new(indicatorX + triangleSize / 2f + indicatorWidth / 2f, stripRect.Bottom)
-        };
-
-        handle.DrawLine(topTriangle[0], topTriangle[1], _indicatorColor);
-        handle.DrawLine(topTriangle[1], topTriangle[2], _indicatorColor);
-        handle.DrawLine(topTriangle[2], topTriangle[0], _indicatorColor);
-
-        handle.DrawLine(bottomTriangle[0], bottomTriangle[1], _indicatorColor);
-        handle.DrawLine(bottomTriangle[1], bottomTriangle[2], _indicatorColor);
-        handle.DrawLine(bottomTriangle[2], bottomTriangle[0], _indicatorColor);
-
-        handle.DrawRect(new UIBox2(indicatorX, stripRect.Top, indicatorX + indicatorWidth, stripRect.Top + triangleSize), _indicatorColor);
-        handle.DrawRect(new UIBox2(indicatorX, stripRect.Bottom - triangleSize, indicatorX + indicatorWidth, stripRect.Bottom), _indicatorColor);
+        DrawIndicator(handle, centerX, stripRect);
     }
 
-    private void DrawCard(DrawingHandleScreen handle, float x, float y, float width, float height, LootboxRarity rarity, float alpha, bool highlight = false)
+    private void DrawCardAtPosition(DrawingHandleScreen handle, float x, float y, float width, float height, LootboxRarity rarity, float alpha, float scale, bool highlight)
     {
-        var (bgColor, borderColor) = GetRarityColors(rarity);
-        var rect = new UIBox2(x, y, x + width, y + height);
+        var centerX = x + width / 2f;
+        var centerY = y + height / 2f;
 
-        handle.DrawRect(rect, bgColor.WithAlpha(alpha * 0.9f));
+        var scaledWidth = width * scale;
+        var scaledHeight = height * scale;
+        var scaledX = centerX - scaledWidth / 2f;
+        var scaledY = centerY - scaledHeight / 2f;
+
+        var (bgColor, borderColor) = GetRarityColors(rarity);
+        var rect = new UIBox2(scaledX, scaledY, scaledX + scaledWidth, scaledY + scaledHeight);
+
+        handle.DrawRect(rect, bgColor.WithAlpha(alpha * 0.95f));
 
         var borderThickness = highlight ? 3f * UIScale : 2f * UIScale;
         var bc = borderColor.WithAlpha(alpha);
@@ -545,10 +455,10 @@ public sealed class EmeraldLootboxOpener : Control
 
         if (highlight)
         {
-            var glowOffset = 4f * UIScale;
+            var glowOffset = 5f * UIScale;
             var glowRect = new UIBox2(rect.Left - glowOffset, rect.Top - glowOffset, rect.Right + glowOffset, rect.Bottom + glowOffset);
             var glowThickness = 2f * UIScale;
-            var gc = borderColor.WithAlpha(alpha * 0.4f);
+            var gc = borderColor.WithAlpha(alpha * 0.5f);
 
             handle.DrawRect(new UIBox2(glowRect.Left, glowRect.Top, glowRect.Right, glowRect.Top + glowThickness), gc);
             handle.DrawRect(new UIBox2(glowRect.Left, glowRect.Bottom - glowThickness, glowRect.Right, glowRect.Bottom), gc);
@@ -556,26 +466,83 @@ public sealed class EmeraldLootboxOpener : Control
             handle.DrawRect(new UIBox2(glowRect.Right - glowThickness, glowRect.Top, glowRect.Right, glowRect.Bottom), gc);
         }
 
-        var gemSize = 24f * UIScale;
-        var gemX = x + (width - gemSize) / 2f;
-        var gemY = y + 20f * UIScale;
-        var gemCenterX = gemX + gemSize / 2f;
-        var gemCenterY = gemY + gemSize / 2f;
+        var gemSize = 28f * UIScale * scale;
+        var gemCenterX = rect.Left + scaledWidth / 2f;
+        var gemCenterY = rect.Top + scaledHeight * 0.35f;
         var gemColor = borderColor.WithAlpha(alpha);
 
-        handle.DrawLine(new Vector2(gemCenterX, gemY), new Vector2(gemX + gemSize, gemCenterY), gemColor);
-        handle.DrawLine(new Vector2(gemX + gemSize, gemCenterY), new Vector2(gemCenterX, gemY + gemSize), gemColor);
-        handle.DrawLine(new Vector2(gemCenterX, gemY + gemSize), new Vector2(gemX, gemCenterY), gemColor);
-        handle.DrawLine(new Vector2(gemX, gemCenterY), new Vector2(gemCenterX, gemY), gemColor);
-        handle.DrawLine(new Vector2(gemX, gemCenterY), new Vector2(gemX + gemSize, gemCenterY), gemColor);
-        handle.DrawLine(new Vector2(gemCenterX, gemY), new Vector2(gemCenterX, gemY + gemSize), gemColor);
+        handle.DrawLine(new Vector2(gemCenterX, gemCenterY - gemSize / 2f), new Vector2(gemCenterX + gemSize / 2f, gemCenterY), gemColor);
+        handle.DrawLine(new Vector2(gemCenterX + gemSize / 2f, gemCenterY), new Vector2(gemCenterX, gemCenterY + gemSize / 2f), gemColor);
+        handle.DrawLine(new Vector2(gemCenterX, gemCenterY + gemSize / 2f), new Vector2(gemCenterX - gemSize / 2f, gemCenterY), gemColor);
+        handle.DrawLine(new Vector2(gemCenterX - gemSize / 2f, gemCenterY), new Vector2(gemCenterX, gemCenterY - gemSize / 2f), gemColor);
+        handle.DrawLine(new Vector2(gemCenterX - gemSize / 2f, gemCenterY), new Vector2(gemCenterX + gemSize / 2f, gemCenterY), gemColor);
+        handle.DrawLine(new Vector2(gemCenterX, gemCenterY - gemSize / 2f), new Vector2(gemCenterX, gemCenterY + gemSize / 2f), gemColor);
 
         var rarityName = GetRarityName(rarity);
         var textWidth = GetTextWidth(rarityName, _rarityFont);
-        var textX = x + (width - textWidth) / 2f;
-        var textY = y + height - 35f * UIScale;
+        var textX = rect.Left + (scaledWidth - textWidth) / 2f;
+        var textY = rect.Bottom - 35f * UIScale * scale;
 
-        handle.DrawString(_rarityFont, new Vector2(textX, textY), rarityName, UIScale, borderColor.WithAlpha(alpha));
+        handle.DrawString(_rarityFont, new Vector2(textX, textY), rarityName, UIScale * scale, borderColor.WithAlpha(alpha));
+    }
+
+    private void DrawIndicator(DrawingHandleScreen handle, float centerX, UIBox2 stripRect)
+    {
+        var indicatorWidth = 3f * UIScale;
+        var indicatorX = centerX - indicatorWidth / 2f;
+
+        handle.DrawRect(new UIBox2(indicatorX, stripRect.Top, indicatorX + indicatorWidth, stripRect.Bottom), _indicatorColor);
+
+        var triangleSize = 14f * UIScale;
+
+        var topTriangle = new Vector2[]
+        {
+            new(centerX, stripRect.Top + triangleSize + 2f * UIScale),
+            new(centerX - triangleSize / 2f, stripRect.Top + 2f * UIScale),
+            new(centerX + triangleSize / 2f, stripRect.Top + 2f * UIScale)
+        };
+
+        var bottomTriangle = new Vector2[]
+        {
+            new(centerX, stripRect.Bottom - triangleSize - 2f * UIScale),
+            new(centerX - triangleSize / 2f, stripRect.Bottom - 2f * UIScale),
+            new(centerX + triangleSize / 2f, stripRect.Bottom - 2f * UIScale)
+        };
+
+        DrawFilledTriangle(handle, topTriangle, _indicatorColor);
+        DrawFilledTriangle(handle, bottomTriangle, _indicatorColor);
+    }
+
+    private void DrawFilledTriangle(DrawingHandleScreen handle, Vector2[] points, Color color)
+    {
+        if (points.Length < 3)
+            return;
+
+        var minY = MathF.Min(points[0].Y, MathF.Min(points[1].Y, points[2].Y));
+        var maxY = MathF.Max(points[0].Y, MathF.Max(points[1].Y, points[2].Y));
+
+        for (var y = minY; y <= maxY; y += 1f)
+        {
+            var intersections = new List<float>();
+
+            for (var i = 0; i < 3; i++)
+            {
+                var p1 = points[i];
+                var p2 = points[(i + 1) % 3];
+
+                if ((p1.Y <= y && p2.Y > y) || (p2.Y <= y && p1.Y > y))
+                {
+                    var t = (y - p1.Y) / (p2.Y - p1.Y);
+                    intersections.Add(p1.X + t * (p2.X - p1.X));
+                }
+            }
+
+            if (intersections.Count >= 2)
+            {
+                intersections.Sort();
+                handle.DrawRect(new UIBox2(intersections[0], y, intersections[1], y + 1f), color);
+            }
+        }
     }
 
     private (Color bg, Color border) GetRarityColors(LootboxRarity rarity)
@@ -594,11 +561,11 @@ public sealed class EmeraldLootboxOpener : Control
     {
         return rarity switch
         {
-            LootboxRarity.Common => "ОБЫЧНЫЙ",
+            LootboxRarity.Common => "РЕДКИЙ",
             LootboxRarity.Epic => "ЭПИЧЕСКИЙ",
             LootboxRarity.Mythic => "МИФИЧЕСКИЙ",
             LootboxRarity.Legendary => "ЛЕГЕНДА",
-            _ => "ОБЫЧНЫЙ"
+            _ => "РЕДКИЙ"
         };
     }
 
