@@ -120,13 +120,6 @@ public sealed class EmeraldCalendarHeader : Control
             : "Заходите каждый день";
         var subtitleWidth = GetTextWidth(subtitleText, _subtitleFont);
         handle.DrawString(_subtitleFont, new Vector2(padding, currentY), subtitleText, UIScale, _subtitleColor);
-
-        var dayText = $"ДЕНЬ {_currentDay}/{_totalDays}";
-        var dayWidth = GetTextWidth(dayText, _dayFont);
-        var dayX = PixelSize.X - dayWidth - padding;
-        var dayY = 8f * UIScale;
-        var dayTextColor = _isPremiumTrack ? _premiumColor : _dayColor;
-        handle.DrawString(_dayFont, new Vector2(dayX, dayY), dayText, UIScale, dayTextColor);
     }
 
     private void DrawBorder(DrawingHandleScreen handle, UIBox2 rect, Color color)

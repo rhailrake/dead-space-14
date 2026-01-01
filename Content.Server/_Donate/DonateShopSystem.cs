@@ -34,17 +34,19 @@ public sealed class DonateShopSystem : EntitySystem
     private const bool Testing = true;
     private const string TestUserId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
 
-    private readonly Dictionary<string, DonateShopState> _cache = new();
+    private readonly Dictionary<string, DonateShopState> _playerCache = new();
     private readonly Dictionary<string, HashSet<string>> _spawnedItems = new();
-    private IDonateApiService? _donateApiService;
-
     private readonly Dictionary<string, DateTime> _playerEntryTimes = new();
-    private readonly List<(string UserId, DateTime Entry, DateTime Exit)> _pendingSessions = new();
+    private readonly List<PendingUptimeSession> _pendingSessions = new();
+
+    private IDonateApiService? _donateApiService;
     private TimeSpan _lastRetryTime = TimeSpan.Zero;
 
     private EnergyShopState? _energyShopCache;
     private TimeSpan _energyShopCacheTime = TimeSpan.Zero;
     private static readonly TimeSpan EnergyShopCacheDuration = TimeSpan.FromMinutes(5);
+
+    private record struct PendingUptimeSession(string UserId, DateTime Entry, DateTime Exit);
 
     private string GetApiUserId(string visitorId) => Testing ? TestUserId : visitorId;
 
@@ -52,7 +54,7 @@ public sealed class DonateShopSystem : EntitySystem
     {
         base.Initialize();
 
-        SubscribeNetworkEvent<RequestUpdateDonateShop>(OnUpdate);
+        SubscribeNetworkEvent<RequestUpdateDonateShop>(OnRequestUpdate);
         SubscribeNetworkEvent<DonateShopSpawnEvent>(OnSpawnRequest);
         SubscribeNetworkEvent<RequestEnergyShopItems>(OnRequestEnergyShop);
         SubscribeNetworkEvent<RequestPurchaseEnergyItem>(OnPurchaseEnergyItem);
@@ -81,15 +83,14 @@ public sealed class DonateShopSystem : EntitySystem
             return;
 
         _lastRetryTime = _gameTiming.CurTime;
-
         _sawmill.Info($"Retrying {_pendingSessions.Count} pending uptime sessions");
 
         var toRetry = _pendingSessions.ToList();
         _pendingSessions.Clear();
 
-        foreach (var (userId, entry, exit) in toRetry)
+        foreach (var session in toRetry)
         {
-            _ = SendUptimeAsync(userId, entry, exit);
+            _ = SendUptimeAsync(session.UserId, session.Entry, session.Exit);
         }
     }
 
@@ -99,12 +100,297 @@ public sealed class DonateShopSystem : EntitySystem
             _donateApiService.AddSpawnBanTimerForUser(session.UserId.ToString());
     }
 
+    private void OnRoundRestart(RoundRestartCleanupEvent ev)
+    {
+        _playerCache.Clear();
+        _spawnedItems.Clear();
+        _donateApiService?.ClearSpawnBanTimer();
+    }
+
+    private void OnPlayerStatusChanged(object? sender, SessionStatusEventArgs e)
+    {
+        var visitorId = e.Session.UserId.ToString();
+
+        switch (e.NewStatus)
+        {
+            case SessionStatus.Connected:
+                _ = FetchAndCachePlayerDataAsync(visitorId);
+                _playerEntryTimes[visitorId] = DateTime.UtcNow;
+                _sawmill.Info($"Player connected: {visitorId}");
+                break;
+
+            case SessionStatus.Disconnected:
+                _playerCache.Remove(visitorId);
+
+                if (_playerEntryTimes.TryGetValue(visitorId, out var entryTime))
+                {
+                    _playerEntryTimes.Remove(visitorId);
+                    _ = SendUptimeAsync(visitorId, entryTime, DateTime.UtcNow);
+                    _sawmill.Info($"Player disconnected: {visitorId}, sending uptime");
+                }
+                break;
+        }
+    }
+
+    private void OnRequestUpdate(RequestUpdateDonateShop msg, EntitySessionEventArgs args)
+    {
+        _ = HandleRequestUpdateAsync(args.SenderSession);
+    }
+
+    private async Task HandleRequestUpdateAsync(ICommonSession session)
+    {
+        var visitorId = session.UserId.ToString();
+        var state = await GetOrFetchPlayerStateAsync(visitorId, session.Name);
+        RaiseNetworkEvent(new UpdateDonateShopUIState(state), session.Channel);
+    }
+
+    private void OnRequestEnergyShop(RequestEnergyShopItems msg, EntitySessionEventArgs args)
+    {
+        _ = HandleRequestEnergyShopAsync(msg.Page, args.SenderSession);
+    }
+
+    private async Task HandleRequestEnergyShopAsync(int page, ICommonSession session)
+    {
+        if (_donateApiService == null)
+        {
+            SendEnergyShopError(session, "Сервис недоступен");
+            return;
+        }
+
+        if (page == 1 && _energyShopCache != null && _gameTiming.CurTime - _energyShopCacheTime < EnergyShopCacheDuration)
+        {
+            RaiseNetworkEvent(new UpdateEnergyShopState(_energyShopCache), session.Channel);
+            return;
+        }
+
+        var state = await _donateApiService.FetchEnergyShopItemsAsync(page);
+
+        if (page == 1 && !state.HasError)
+        {
+            _energyShopCache = state;
+            _energyShopCacheTime = _gameTiming.CurTime;
+        }
+
+        RaiseNetworkEvent(new UpdateEnergyShopState(state), session.Channel);
+    }
+
+    private void OnPurchaseEnergyItem(RequestPurchaseEnergyItem msg, EntitySessionEventArgs args)
+    {
+        _ = HandlePurchaseAsync(msg.ItemId, msg.Period, args.SenderSession);
+    }
+
+    private async Task HandlePurchaseAsync(int itemId, PurchasePeriod period, ICommonSession session)
+    {
+        var visitorId = session.UserId.ToString();
+
+        if (_donateApiService == null)
+        {
+            SendPurchaseResult(session, false, "Сервис недоступен");
+            return;
+        }
+
+        if (!_playerCache.TryGetValue(visitorId, out var cachedData) || cachedData.User == 0)
+        {
+            SendPurchaseResult(session, false, "Данные пользователя не загружены");
+            return;
+        }
+
+        var result = await _donateApiService.PurchaseEnergyItemAsync(cachedData.User, itemId, period);
+        RaiseNetworkEvent(new PurchaseEnergyItemResult(result), session.Channel);
+
+        if (result.Success)
+        {
+            InvalidatePlayerCache(visitorId);
+            InvalidateShopCache();
+            await SendUpdatedPlayerStateAsync(session);
+        }
+    }
+
+    private void OnRequestDailyCalendar(RequestDailyCalendar msg, EntitySessionEventArgs args)
+    {
+        _ = HandleRequestCalendarAsync(args.SenderSession);
+    }
+
+    private async Task HandleRequestCalendarAsync(ICommonSession session)
+    {
+        if (_donateApiService == null)
+        {
+            SendCalendarError(session, "Сервис недоступен");
+            return;
+        }
+
+        var visitorId = session.UserId.ToString();
+        var apiUserId = GetApiUserId(visitorId);
+        var state = await _donateApiService.FetchDailyCalendarAsync(apiUserId);
+
+        RaiseNetworkEvent(new UpdateDailyCalendarState(state), session.Channel);
+    }
+
+    private void OnClaimCalendarReward(RequestClaimCalendarReward msg, EntitySessionEventArgs args)
+    {
+        _ = HandleClaimRewardAsync(msg.RewardId, msg.IsPremium, args.SenderSession);
+    }
+
+    private async Task HandleClaimRewardAsync(int rewardId, bool isPremium, ICommonSession session)
+    {
+        if (_donateApiService == null)
+        {
+            SendClaimResult(session, false, "Сервис недоступен");
+            return;
+        }
+
+        var visitorId = session.UserId.ToString();
+        var apiUserId = GetApiUserId(visitorId);
+        var result = await _donateApiService.ClaimCalendarRewardAsync(apiUserId, rewardId);
+
+        RaiseNetworkEvent(new ClaimCalendarRewardResult(result), session.Channel);
+
+        if (result.Success)
+        {
+            InvalidatePlayerCache(visitorId);
+            await SendUpdatedPlayerStateAsync(session);
+        }
+    }
+
+    private void OnOpenLootbox(RequestOpenLootbox msg, EntitySessionEventArgs args)
+    {
+        _ = HandleOpenLootboxAsync(msg.UserItemId, msg.StelsOpen, args.SenderSession);
+    }
+
+    private async Task HandleOpenLootboxAsync(int userItemId, bool stelsOpen, ICommonSession session)
+    {
+        if (_donateApiService == null)
+        {
+            SendLootboxResult(session, false, "Сервис недоступен");
+            return;
+        }
+
+        var visitorId = session.UserId.ToString();
+        var apiUserId = GetApiUserId(visitorId);
+        var result = await _donateApiService.OpenLootboxAsync(apiUserId, userItemId, stelsOpen);
+
+        RaiseNetworkEvent(new LootboxOpenedResult(result), session.Channel);
+
+        if (result.Success)
+        {
+            InvalidatePlayerCache(visitorId);
+            await SendUpdatedPlayerStateAsync(session);
+        }
+    }
+
+    private void OnSpawnRequest(DonateShopSpawnEvent msg, EntitySessionEventArgs args)
+    {
+        var session = args.SenderSession;
+        var visitorId = session.UserId.ToString();
+
+        if (!_playerCache.TryGetValue(visitorId, out var state))
+            return;
+
+        if (state.SpawnedItems.Contains(msg.ProtoId))
+            return;
+
+        if (session.AttachedEntity == null)
+            return;
+
+        var playerEntity = session.AttachedEntity.Value;
+
+        if (!HasComp<HumanoidAppearanceComponent>(playerEntity) || !_mobState.IsAlive(playerEntity))
+            return;
+
+        var allItems = GetAllPlayerItems(state);
+        var item = allItems.FirstOrDefault(i => i.ItemIdInGame == msg.ProtoId);
+
+        if (item == null || !item.IsActive)
+            return;
+
+        if (_gameTicker.RunLevel != GameRunLevel.InRound)
+            return;
+
+        var playerTransform = Transform(playerEntity);
+        var spawnedEntity = Spawn(msg.ProtoId, _transform.GetMapCoordinates(playerTransform));
+        _handsSystem.TryPickupAnyHand(playerEntity, spawnedEntity);
+
+        if (!_spawnedItems.ContainsKey(visitorId))
+            _spawnedItems[visitorId] = new HashSet<string>();
+
+        _spawnedItems[visitorId].Add(msg.ProtoId);
+        state.SpawnedItems.Add(msg.ProtoId);
+
+        RaiseNetworkEvent(new UpdateDonateShopUIState(state), session.Channel);
+    }
+
+    private async Task<DonateShopState> GetOrFetchPlayerStateAsync(string visitorId, string playerName)
+    {
+        if (_playerCache.TryGetValue(visitorId, out var cachedState))
+        {
+            if (cachedState.PlayerUserName == "Unknown")
+                cachedState.PlayerUserName = playerName;
+            return cachedState;
+        }
+
+        var apiUserId = GetApiUserId(visitorId);
+        var state = await FetchPlayerDataAsync(apiUserId);
+
+        if (state.IsRegistered != false)
+        {
+            if (_spawnedItems.TryGetValue(visitorId, out var spawned))
+                state.SpawnedItems = spawned;
+
+            if (state.PlayerUserName == "Unknown")
+                state.PlayerUserName = playerName;
+
+            _playerCache[visitorId] = state;
+        }
+
+        return state;
+    }
+
+    private async Task FetchAndCachePlayerDataAsync(string visitorId)
+    {
+        var apiUserId = GetApiUserId(visitorId);
+        var data = await FetchPlayerDataAsync(apiUserId);
+
+        if (data.IsRegistered != false)
+        {
+            if (_spawnedItems.TryGetValue(visitorId, out var spawned))
+                data.SpawnedItems = spawned;
+
+            _playerCache[visitorId] = data;
+        }
+    }
+
+    private async Task<DonateShopState> FetchPlayerDataAsync(string apiUserId)
+    {
+        if (_donateApiService == null)
+            return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
+
+        var response = await _donateApiService.FetchUserDataAsync(apiUserId);
+        return response ?? new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
+    }
+
+    private async Task SendUpdatedPlayerStateAsync(ICommonSession session)
+    {
+        var visitorId = session.UserId.ToString();
+        var state = await GetOrFetchPlayerStateAsync(visitorId, session.Name);
+        RaiseNetworkEvent(new UpdateDonateShopUIState(state), session.Channel);
+    }
+
+    private void InvalidatePlayerCache(string visitorId)
+    {
+        _playerCache.Remove(visitorId);
+    }
+
+    private void InvalidateShopCache()
+    {
+        _energyShopCache = null;
+    }
+
     private async Task SendUptimeAsync(string visitorId, DateTime entryTime, DateTime exitTime)
     {
         if (_donateApiService == null)
         {
             _sawmill.Warning($"API service is null, queueing for retry: {visitorId}");
-            _pendingSessions.Add((visitorId, entryTime, exitTime));
+            _pendingSessions.Add(new PendingUptimeSession(visitorId, entryTime, exitTime));
             return;
         }
 
@@ -124,313 +410,59 @@ public sealed class DonateShopSystem : EntitySystem
 
             case UptimeResult.NeedsRetry:
                 _sawmill.Warning($"Uptime send failed, queueing for retry: {visitorId}, duration: {duration:F1} min");
-                _pendingSessions.Add((visitorId, entryTime, exitTime));
+                _pendingSessions.Add(new PendingUptimeSession(visitorId, entryTime, exitTime));
                 break;
         }
     }
 
-    private void OnRoundRestart(RoundRestartCleanupEvent ev)
+    private static List<DonateItemData> GetAllPlayerItems(DonateShopState state)
     {
-        _cache.Clear();
-        _spawnedItems.Clear();
-
-        if (_donateApiService != null)
-            _donateApiService.ClearSpawnBanTimer();
-    }
-
-    private void OnPlayerStatusChanged(object? sender, SessionStatusEventArgs e)
-    {
-        var visitorId = e.Session.UserId.ToString();
-
-        if (e.NewStatus == SessionStatus.Connected)
-        {
-            _ = FetchAndCachePlayerData(visitorId);
-            _playerEntryTimes[visitorId] = DateTime.UtcNow;
-            _sawmill.Info($"Player connected: {visitorId}");
-        }
-        else if (e.NewStatus == SessionStatus.Disconnected)
-        {
-            _cache.Remove(visitorId);
-
-            if (_playerEntryTimes.TryGetValue(visitorId, out var entryTime))
-            {
-                _playerEntryTimes.Remove(visitorId);
-                var exitTime = DateTime.UtcNow;
-                _sawmill.Info($"Player disconnected: {visitorId}, sending uptime");
-                _ = SendUptimeAsync(visitorId, entryTime, exitTime);
-            }
-        }
-    }
-
-    private async Task FetchAndCachePlayerData(string visitorId)
-    {
-        var apiUserId = GetApiUserId(visitorId);
-        var data = await FetchDonateData(apiUserId);
-
-        if (data.IsRegistered != false)
-        {
-            if (_spawnedItems.TryGetValue(visitorId, out var spawned))
-            {
-                data.SpawnedItems = spawned;
-            }
-            _cache[visitorId] = data;
-        }
-    }
-
-    private void OnUpdate(RequestUpdateDonateShop msg, EntitySessionEventArgs args)
-    {
-        _ = PrepareUpdate(args);
-    }
-
-    private async Task PrepareUpdate(EntitySessionEventArgs args)
-    {
-        var visitorId = args.SenderSession.UserId.ToString();
-
-        if (!_cache.TryGetValue(visitorId, out var data))
-        {
-            var apiUserId = GetApiUserId(visitorId);
-            data = await FetchDonateData(apiUserId);
-
-            if (data.IsRegistered != false)
-            {
-                if (_spawnedItems.TryGetValue(visitorId, out var spawned))
-                    data.SpawnedItems = spawned;
-
-                _cache[visitorId] = data;
-            }
-        }
-
-        if (data.PlayerUserName == "Unknown")
-        {
-            data.PlayerUserName = args.SenderSession.Name;
-        }
-
-        RaiseNetworkEvent(new UpdateDonateShopUIState(data), args.SenderSession.Channel);
-    }
-
-    private void OnRequestEnergyShop(RequestEnergyShopItems msg, EntitySessionEventArgs args)
-    {
-        _ = PrepareEnergyShopUpdate(msg, args);
-    }
-
-    private async Task PrepareEnergyShopUpdate(RequestEnergyShopItems msg, EntitySessionEventArgs args)
-    {
-        if (_donateApiService == null)
-        {
-            RaiseNetworkEvent(new UpdateEnergyShopState(new EnergyShopState("Сервис недоступен")), args.SenderSession.Channel);
-            return;
-        }
-
-        if (msg.Page == 1 && _energyShopCache != null && _gameTiming.CurTime - _energyShopCacheTime < EnergyShopCacheDuration)
-        {
-            RaiseNetworkEvent(new UpdateEnergyShopState(_energyShopCache), args.SenderSession.Channel);
-            return;
-        }
-
-        var state = await _donateApiService.FetchEnergyShopItemsAsync(msg.Page);
-
-        if (msg.Page == 1 && !state.HasError)
-        {
-            _energyShopCache = state;
-            _energyShopCacheTime = _gameTiming.CurTime;
-        }
-
-        RaiseNetworkEvent(new UpdateEnergyShopState(state), args.SenderSession.Channel);
-    }
-
-    private void OnPurchaseEnergyItem(RequestPurchaseEnergyItem msg, EntitySessionEventArgs args)
-    {
-        _ = ProcessPurchase(msg, args);
-    }
-
-    private async Task ProcessPurchase(RequestPurchaseEnergyItem msg, EntitySessionEventArgs args)
-    {
-        var visitorId = args.SenderSession.UserId.ToString();
-
-        if (_donateApiService == null)
-        {
-            RaiseNetworkEvent(new PurchaseEnergyItemResult(new PurchaseResult(false, "Сервис недоступен")), args.SenderSession.Channel);
-            return;
-        }
-
-        if (!_cache.TryGetValue(visitorId, out var cachedData) || cachedData.User == 0)
-        {
-            RaiseNetworkEvent(new PurchaseEnergyItemResult(new PurchaseResult(false, "Данные пользователя не загружены")), args.SenderSession.Channel);
-            return;
-        }
-
-        var result = await _donateApiService.PurchaseEnergyItemAsync(cachedData.User, msg.ItemId, msg.Period);
-
-        RaiseNetworkEvent(new PurchaseEnergyItemResult(result), args.SenderSession.Channel);
-
-        if (result.Success)
-        {
-            _cache.Remove(visitorId);
-            await FetchAndCachePlayerData(visitorId);
-
-            if (_cache.TryGetValue(visitorId, out var newData))
-            {
-                RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
-            }
-
-            _energyShopCache = null;
-        }
-    }
-
-    private void OnRequestDailyCalendar(RequestDailyCalendar msg, EntitySessionEventArgs args)
-    {
-        _ = PrepareCalendarUpdate(args);
-    }
-
-    private async Task PrepareCalendarUpdate(EntitySessionEventArgs args)
-    {
-        if (_donateApiService == null)
-        {
-            RaiseNetworkEvent(new UpdateDailyCalendarState(new DailyCalendarState("Сервис недоступен")), args.SenderSession.Channel);
-            return;
-        }
-
-        var visitorId = args.SenderSession.UserId.ToString();
-        var apiUserId = GetApiUserId(visitorId);
-        var state = await _donateApiService.FetchDailyCalendarAsync(apiUserId);
-
-        RaiseNetworkEvent(new UpdateDailyCalendarState(state), args.SenderSession.Channel);
-    }
-
-    private void OnClaimCalendarReward(RequestClaimCalendarReward msg, EntitySessionEventArgs args)
-    {
-        _ = ProcessClaimReward(msg, args);
-    }
-
-    private async Task ProcessClaimReward(RequestClaimCalendarReward msg, EntitySessionEventArgs args)
-    {
-        if (_donateApiService == null)
-        {
-            RaiseNetworkEvent(new ClaimCalendarRewardResult(new ClaimRewardResult(false, "Сервис недоступен")), args.SenderSession.Channel);
-            return;
-        }
-
-        var visitorId = args.SenderSession.UserId.ToString();
-        var apiUserId = GetApiUserId(visitorId);
-        var result = await _donateApiService.ClaimCalendarRewardAsync(apiUserId, msg.RewardId);
-
-        RaiseNetworkEvent(new ClaimCalendarRewardResult(result), args.SenderSession.Channel);
-
-        if (result.Success)
-        {
-            _cache.Remove(visitorId);
-            await FetchAndCachePlayerData(visitorId);
-
-            if (_cache.TryGetValue(visitorId, out var newData))
-            {
-                RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
-            }
-        }
-    }
-
-    private void OnOpenLootbox(RequestOpenLootbox msg, EntitySessionEventArgs args)
-    {
-        _ = ProcessOpenLootbox(msg, args);
-    }
-
-    private async Task ProcessOpenLootbox(RequestOpenLootbox msg, EntitySessionEventArgs args)
-    {
-        if (_donateApiService == null)
-        {
-            RaiseNetworkEvent(new LootboxOpenedResult(new LootboxOpenResult(false, "Сервис недоступен")), args.SenderSession.Channel);
-            return;
-        }
-
-        var visitorId = args.SenderSession.UserId.ToString();
-        var apiUserId = GetApiUserId(visitorId);
-        var result = await _donateApiService.OpenLootboxAsync(apiUserId, msg.UserItemId, msg.StelsOpen);
-
-        RaiseNetworkEvent(new LootboxOpenedResult(result), args.SenderSession.Channel);
-
-        if (result.Success)
-        {
-            _cache.Remove(visitorId);
-            await FetchAndCachePlayerData(visitorId);
-
-            if (_cache.TryGetValue(visitorId, out var newData))
-            {
-                RaiseNetworkEvent(new UpdateDonateShopUIState(newData), args.SenderSession.Channel);
-            }
-        }
-    }
-
-    private void OnSpawnRequest(DonateShopSpawnEvent msg, EntitySessionEventArgs args)
-    {
-        var visitorId = args.SenderSession.UserId.ToString();
-
-        if (!_cache.TryGetValue(visitorId, out var state))
-            return;
-
-        if (state.SpawnedItems.Contains(msg.ProtoId))
-            return;
-
-        if (args.SenderSession.AttachedEntity == null)
-            return;
-
-        var playerEntity = args.SenderSession.AttachedEntity.Value;
-
-        if (!HasComp<HumanoidAppearanceComponent>(playerEntity) || !_mobState.IsAlive(playerEntity))
-            return;
-
         var allItems = new List<DonateItemData>(state.Items);
+
         foreach (var sub in state.Subscribes)
         {
             foreach (var subItem in sub.Items)
             {
                 if (allItems.All(i => i.ItemIdInGame != subItem.ItemIdInGame))
-                {
                     allItems.Add(subItem);
-                }
             }
         }
 
-        var item = allItems.FirstOrDefault(i => i.ItemIdInGame == msg.ProtoId);
-        if (item == null || !item.IsActive)
-            return;
-
-        if (_gameTicker.RunLevel != GameRunLevel.InRound)
-            return;
-
-        var playerTransform = Transform(playerEntity);
-        var spawnedEntity = Spawn(msg.ProtoId, _transform.GetMapCoordinates(playerTransform));
-        _handsSystem.TryPickupAnyHand(playerEntity, spawnedEntity);
-
-        if (!_spawnedItems.ContainsKey(visitorId))
-        {
-            _spawnedItems[visitorId] = new HashSet<string>();
-        }
-
-        _spawnedItems[visitorId].Add(msg.ProtoId);
-        state.SpawnedItems.Add(msg.ProtoId);
-
-        RaiseNetworkEvent(new UpdateDonateShopUIState(state), args.SenderSession.Channel);
+        return allItems;
     }
 
-    private async Task<DonateShopState> FetchDonateData(string apiUserId)
+    private void SendEnergyShopError(ICommonSession session, string message)
     {
-        if (_donateApiService == null)
-            return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
+        RaiseNetworkEvent(new UpdateEnergyShopState(new EnergyShopState(message)), session.Channel);
+    }
 
-        var apiResponse = await _donateApiService.FetchUserDataAsync(apiUserId);
+    private void SendCalendarError(ICommonSession session, string message)
+    {
+        RaiseNetworkEvent(new UpdateDailyCalendarState(new DailyCalendarState(message)), session.Channel);
+    }
 
-        if (apiResponse == null)
-            return new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
+    private void SendPurchaseResult(ICommonSession session, bool success, string message)
+    {
+        RaiseNetworkEvent(new PurchaseEnergyItemResult(new PurchaseResult(success, message)), session.Channel);
+    }
 
-        return apiResponse;
+    private void SendClaimResult(ICommonSession session, bool success, string message)
+    {
+        RaiseNetworkEvent(new ClaimCalendarRewardResult(new ClaimRewardResult(success, message)), session.Channel);
+    }
+
+    private void SendLootboxResult(ICommonSession session, bool success, string message)
+    {
+        RaiseNetworkEvent(new LootboxOpenedResult(new LootboxOpenResult(success, message)), session.Channel);
     }
 
     public async Task RefreshPlayerCache(string visitorId)
     {
-        await FetchAndCachePlayerData(visitorId);
+        await FetchAndCachePlayerDataAsync(visitorId);
     }
 
     public DonateShopState? GetCachedData(string visitorId)
     {
-        return _cache.TryGetValue(visitorId, out var data) ? data : null;
+        return _playerCache.TryGetValue(visitorId, out var data) ? data : null;
     }
 }
