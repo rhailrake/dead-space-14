@@ -35,6 +35,7 @@ public sealed class DonateShopSystem : EntitySystem
     private const string TestUserId = "b6a6fd9b-1383-482e-a39f-814190fe231f";
 
     private readonly Dictionary<string, DonateShopState> _playerCache = new();
+    private readonly Dictionary<string, InventoryState> _inventoryCache = new();
     private readonly Dictionary<string, HashSet<string>> _spawnedItems = new();
     private readonly Dictionary<string, DateTime> _playerEntryTimes = new();
     private readonly List<PendingUptimeSession> _pendingSessions = new();
@@ -55,6 +56,7 @@ public sealed class DonateShopSystem : EntitySystem
         base.Initialize();
 
         SubscribeNetworkEvent<RequestUpdateDonateShop>(OnRequestUpdate);
+        SubscribeNetworkEvent<RequestInventory>(OnRequestInventory);
         SubscribeNetworkEvent<DonateShopSpawnEvent>(OnSpawnRequest);
         SubscribeNetworkEvent<RequestEnergyShopItems>(OnRequestEnergyShop);
         SubscribeNetworkEvent<RequestPurchaseEnergyItem>(OnPurchaseEnergyItem);
@@ -103,6 +105,7 @@ public sealed class DonateShopSystem : EntitySystem
     private void OnRoundRestart(RoundRestartCleanupEvent ev)
     {
         _playerCache.Clear();
+        _inventoryCache.Clear();
         _spawnedItems.Clear();
         _donateApiService?.ClearSpawnBanTimer();
     }
@@ -121,6 +124,7 @@ public sealed class DonateShopSystem : EntitySystem
 
             case SessionStatus.Disconnected:
                 _playerCache.Remove(visitorId);
+                _inventoryCache.Remove(visitorId);
 
                 if (_playerEntryTimes.TryGetValue(visitorId, out var entryTime))
                 {
@@ -142,6 +146,18 @@ public sealed class DonateShopSystem : EntitySystem
         var visitorId = session.UserId.ToString();
         var state = await GetOrFetchPlayerStateAsync(visitorId, session.Name);
         RaiseNetworkEvent(new UpdateDonateShopUIState(state), session.Channel);
+    }
+
+    private void OnRequestInventory(RequestInventory msg, EntitySessionEventArgs args)
+    {
+        _ = HandleRequestInventoryAsync(args.SenderSession);
+    }
+
+    private async Task HandleRequestInventoryAsync(ICommonSession session)
+    {
+        var visitorId = session.UserId.ToString();
+        var state = await GetOrFetchInventoryAsync(visitorId);
+        RaiseNetworkEvent(new UpdateInventoryState(state), session.Channel);
     }
 
     private void OnRequestEnergyShop(RequestEnergyShopItems msg, EntitySessionEventArgs args)
@@ -203,6 +219,7 @@ public sealed class DonateShopSystem : EntitySystem
             InvalidatePlayerCache(visitorId);
             InvalidateShopCache();
             await SendUpdatedPlayerStateAsync(session);
+            await SendUpdatedInventoryAsync(session);
         }
     }
 
@@ -249,6 +266,7 @@ public sealed class DonateShopSystem : EntitySystem
         {
             InvalidatePlayerCache(visitorId);
             await SendUpdatedPlayerStateAsync(session);
+            await SendUpdatedInventoryAsync(session);
         }
     }
 
@@ -275,6 +293,7 @@ public sealed class DonateShopSystem : EntitySystem
         {
             InvalidatePlayerCache(visitorId);
             await SendUpdatedPlayerStateAsync(session);
+            await SendUpdatedInventoryAsync(session);
         }
     }
 
@@ -297,10 +316,11 @@ public sealed class DonateShopSystem : EntitySystem
         if (!HasComp<HumanoidAppearanceComponent>(playerEntity) || !_mobState.IsAlive(playerEntity))
             return;
 
-        var allItems = GetAllPlayerItems(state);
-        var item = allItems.FirstOrDefault(i => i.ItemIdInGame == msg.ProtoId);
+        if (!_inventoryCache.TryGetValue(visitorId, out var inventory))
+            return;
 
-        if (item == null || !item.IsActive)
+        var item = inventory.Items.FirstOrDefault(i => i.ItemIdInGame == msg.ProtoId);
+        if (item == null)
             return;
 
         if (_gameTicker.RunLevel != GameRunLevel.InRound)
@@ -345,6 +365,20 @@ public sealed class DonateShopSystem : EntitySystem
         return state;
     }
 
+    private async Task<InventoryState> GetOrFetchInventoryAsync(string visitorId)
+    {
+        if (_inventoryCache.TryGetValue(visitorId, out var cachedState))
+            return cachedState;
+
+        var apiUserId = GetApiUserId(visitorId);
+        var state = await FetchInventoryDataAsync(apiUserId);
+
+        if (!state.HasError)
+            _inventoryCache[visitorId] = state;
+
+        return state;
+    }
+
     private async Task FetchAndCachePlayerDataAsync(string visitorId)
     {
         var apiUserId = GetApiUserId(visitorId);
@@ -357,6 +391,10 @@ public sealed class DonateShopSystem : EntitySystem
 
             _playerCache[visitorId] = data;
         }
+
+        var inventoryData = await FetchInventoryDataAsync(apiUserId);
+        if (!inventoryData.HasError)
+            _inventoryCache[visitorId] = inventoryData;
     }
 
     private async Task<DonateShopState> FetchPlayerDataAsync(string apiUserId)
@@ -368,6 +406,15 @@ public sealed class DonateShopSystem : EntitySystem
         return response ?? new DonateShopState("Ведутся технические работы, сервис будет доступен позже.");
     }
 
+    private async Task<InventoryState> FetchInventoryDataAsync(string apiUserId)
+    {
+        if (_donateApiService == null)
+            return new InventoryState("Ведутся технические работы, сервис будет доступен позже.");
+
+        var response = await _donateApiService.FetchInventoryAsync(apiUserId);
+        return response ?? new InventoryState("Ведутся технические работы, сервис будет доступен позже.");
+    }
+
     private async Task SendUpdatedPlayerStateAsync(ICommonSession session)
     {
         var visitorId = session.UserId.ToString();
@@ -375,9 +422,18 @@ public sealed class DonateShopSystem : EntitySystem
         RaiseNetworkEvent(new UpdateDonateShopUIState(state), session.Channel);
     }
 
+    private async Task SendUpdatedInventoryAsync(ICommonSession session)
+    {
+        var visitorId = session.UserId.ToString();
+        _inventoryCache.Remove(visitorId);
+        var state = await GetOrFetchInventoryAsync(visitorId);
+        RaiseNetworkEvent(new UpdateInventoryState(state), session.Channel);
+    }
+
     private void InvalidatePlayerCache(string visitorId)
     {
         _playerCache.Remove(visitorId);
+        _inventoryCache.Remove(visitorId);
     }
 
     private void InvalidateShopCache()
@@ -415,22 +471,6 @@ public sealed class DonateShopSystem : EntitySystem
         }
     }
 
-    private static List<DonateItemData> GetAllPlayerItems(DonateShopState state)
-    {
-        var allItems = new List<DonateItemData>(state.Items);
-
-        foreach (var sub in state.Subscribes)
-        {
-            foreach (var subItem in sub.Items)
-            {
-                if (allItems.All(i => i.ItemIdInGame != subItem.ItemIdInGame))
-                    allItems.Add(subItem);
-            }
-        }
-
-        return allItems;
-    }
-
     private void SendEnergyShopError(ICommonSession session, string message)
     {
         RaiseNetworkEvent(new UpdateEnergyShopState(new EnergyShopState(message)), session.Channel);
@@ -464,5 +504,10 @@ public sealed class DonateShopSystem : EntitySystem
     public DonateShopState? GetCachedData(string visitorId)
     {
         return _playerCache.TryGetValue(visitorId, out var data) ? data : null;
+    }
+
+    public InventoryState? GetCachedInventory(string visitorId)
+    {
+        return _inventoryCache.TryGetValue(visitorId, out var data) ? data : null;
     }
 }

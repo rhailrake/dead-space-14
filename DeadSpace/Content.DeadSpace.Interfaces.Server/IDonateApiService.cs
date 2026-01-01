@@ -14,6 +14,7 @@ public enum UptimeResult
 public interface IDonateApiService
 {
     Task<DonateShopState?> FetchUserDataAsync(string userId);
+    Task<InventoryState?> FetchInventoryAsync(string userId);
     Task<UptimeResult> SendUptimeAsync(string userId, DateTime entryTime, DateTime exitTime);
     void AddSpawnBanTimerForUser(string userId);
     void ClearSpawnBanTimer();

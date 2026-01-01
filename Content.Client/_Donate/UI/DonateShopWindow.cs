@@ -23,6 +23,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     }
 
     private DonateShopState? _state;
+    private InventoryState? _inventoryState;
     private EnergyShopState? _energyShopState;
     private DailyCalendarState? _calendarState;
 
@@ -35,6 +36,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
     private bool _shopLoading;
     private bool _calendarLoading;
+    private bool _inventoryLoading;
     private bool _isPurchasing;
     private bool _isClaimingReward;
     private bool _showingRewardResult;
@@ -359,7 +361,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     private void OnInventorySearchChanged(string text)
     {
         _searchQuery = text.ToLower();
-        if (_state != null && _currentCategory != null)
+        if (_inventoryState != null && _currentCategory != null)
             RefreshInventoryItems();
     }
 
@@ -398,6 +400,8 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
             case Tab.Inventory:
                 _contentContainer.AddChild(_inventoryContent);
+                if (_inventoryState == null && !_inventoryLoading)
+                    RequestInventoryData();
                 break;
 
             case Tab.Shop:
@@ -424,6 +428,12 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
     {
         _shopItemsPanel.RemoveAllChildren();
         _shopItemsPanel.AddChild(CreateCenteredMessage("ЗАГРУЗКА МАГАЗИНА..."));
+    }
+
+    private void ShowInventoryLoading()
+    {
+        _categoryItemsPanel.RemoveAllChildren();
+        _categoryItemsPanel.AddChild(CreateCenteredMessage("ЗАГРУЗКА ИНВЕНТАРЯ..."));
     }
 
     private Control CreateCenteredMessage(string title, string? subtitle = null, Color? titleColor = null)
@@ -483,6 +493,19 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
         RefreshTopPanel();
         RefreshProfile();
+    }
+
+    public void ApplyInventoryState(InventoryState state)
+    {
+        _inventoryState = state;
+        _inventoryLoading = false;
+
+        if (state.HasError)
+        {
+            ShowInventoryError(state.ErrorMessage);
+            return;
+        }
+
         RefreshInventoryCategories();
     }
 
@@ -526,7 +549,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         _levelBar.Progress = _state.Progress;
 
         _batteryDisplay.Amount = (int)_state.Energy;
-        _crystalDisplay.Amount = _state.Crystals;
+        _crystalDisplay.Amount = (int)_state.Crystals;
     }
 
     private void RefreshProfile()
@@ -606,30 +629,19 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             _profilePanel.AddChild(buyPremiumCard);
         }
 
-        if (_state.Subscribes.Count > 0)
+        if (_state.ActiveSubscription != null)
         {
-            var subsContainer = new BoxContainer
+            var sub = _state.ActiveSubscription;
+            var isAdmin = sub.Name.StartsWith("[ADMIN]");
+            _profilePanel.AddChild(new EmeraldSubscriptionCard
             {
-                Orientation = BoxContainer.LayoutOrientation.Vertical,
-                HorizontalExpand = true,
-                SeparationOverride = 8
-            };
-
-            foreach (var sub in _state.Subscribes)
-            {
-                var isAdmin = sub.SubscribeName.StartsWith("[ADMIN]");
-                subsContainer.AddChild(new EmeraldSubscriptionCard
-                {
-                    NameSub = sub.SubscribeName.ToUpper(),
-                    Price = isAdmin ? "БЕСПЛАТНО" : $"{sub.Price} РУБ",
-                    Dates = isAdmin ? "Навсегда" : $"Дата окончания: {sub.FinishDate}",
-                    ItemCount = sub.Items.Count,
-                    IsAdmin = isAdmin,
-                    HorizontalExpand = true
-                });
-            }
-
-            _profilePanel.AddChild(subsContainer);
+                NameSub = sub.Name.ToUpper(),
+                Price = isAdmin ? "БЕСПЛАТНО" : "ПОДПИСКА",
+                Dates = isAdmin ? "Навсегда" : $"{sub.StartDate} - {sub.FinishDate}",
+                ItemCount = 0,
+                IsAdmin = isAdmin,
+                HorizontalExpand = true
+            });
         }
         else
         {
@@ -641,12 +653,12 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
     private void RefreshInventoryCategories()
     {
-        if (_state == null)
+        if (_inventoryState == null)
             return;
 
         _categoryTabsContainer.RemoveAllChildren();
 
-        var allItems = GetAllItems();
+        var allItems = _inventoryState.Items;
 
         if (allItems.Count == 0)
         {
@@ -687,15 +699,14 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
     private void RefreshInventoryItems()
     {
-        if (_state == null || _currentCategory == null)
+        if (_inventoryState == null || _currentCategory == null)
             return;
 
         _categoryItemsPanel.RemoveAllChildren();
 
-        var allItems = GetAllItems();
-        var categoryItems = allItems
+        var categoryItems = _inventoryState.Items
             .Where(i => i.Category == _currentCategory)
-            .Where(i => string.IsNullOrEmpty(_searchQuery) || i.ItemName.ToLower().Contains(_searchQuery))
+            .Where(i => string.IsNullOrEmpty(_searchQuery) || i.Name.ToLower().Contains(_searchQuery))
             .ToList();
 
         if (categoryItems.Count == 0)
@@ -720,19 +731,22 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
 
         foreach (var item in categoryItems)
         {
+            var isSubscription = item.Source == "subscription";
+            var isLootbox = item.Name.ToLower().Contains("лутбокс") || item.Name.ToLower().Contains("lootbox");
+
             var itemCard = new EmeraldItemCard
             {
-                ItemName = item.ItemName.ToUpper(),
+                ItemName = item.Name.ToUpper(),
                 ProtoId = item.ItemIdInGame ?? "",
                 TimeFinish = item.TimeFinish,
                 TimeAllways = item.TimeAllways,
-                IsActive = item.IsActive,
-                IsSpawned = _state.SpawnedItems.Contains(item.ItemIdInGame ?? ""),
-                IsTimeUp = _state.IsTimeUp,
-                SourceSubscription = item.SourceSubscription,
-                IsLootbox = item.IsLootbox,
-                UserItemId = item.UserItemId,
-                StelsHidden = item.StelsHidden
+                IsActive = true,
+                IsSpawned = _state?.SpawnedItems.Contains(item.ItemIdInGame ?? "") ?? false,
+                IsTimeUp = _state?.IsTimeUp ?? false,
+                SourceSubscription = isSubscription ? item.Source : null,
+                IsLootbox = isLootbox,
+                UserItemId = item.Id,
+                StelsHidden = false
             };
 
             itemCard.OnSpawnRequest += OnSpawnItemRequest;
@@ -1059,6 +1073,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         SetTabButtonsDisabled(false);
 
         RequestMainData();
+        RequestInventoryData();
         SwitchTab(_previousTab);
     }
 
@@ -1112,6 +1127,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
             _showingRewardResult = false;
             RequestMainData();
             RequestCalendarData();
+            RequestInventoryData();
         };
 
         mainContainer.AddChild(rewardDisplay);
@@ -1161,6 +1177,7 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         {
             RequestMainData();
             RequestShopData();
+            RequestInventoryData();
         };
 
         container.AddChild(backButton);
@@ -1349,9 +1366,59 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         _shopItemsPanel.AddChild(container);
     }
 
+    private void ShowInventoryError(string message)
+    {
+        _categoryItemsPanel.RemoveAllChildren();
+
+        var container = new BoxContainer
+        {
+            Orientation = BoxContainer.LayoutOrientation.Vertical,
+            HorizontalExpand = true,
+            VerticalExpand = true,
+            HorizontalAlignment = HAlignment.Center,
+            VerticalAlignment = VAlignment.Center,
+            SeparationOverride = 16
+        };
+
+        container.AddChild(new EmeraldLabel
+        {
+            Text = "ОШИБКА ИНВЕНТАРЯ",
+            TextColor = Color.FromHex("#ff6b6b"),
+            HorizontalAlignment = HAlignment.Center,
+            Alignment = EmeraldLabel.TextAlignment.Center
+        });
+
+        container.AddChild(new EmeraldLabel
+        {
+            Text = message,
+            HorizontalAlignment = HAlignment.Center,
+            Alignment = EmeraldLabel.TextAlignment.Center
+        });
+
+        var retryButton = new EmeraldButton
+        {
+            Text = "ПОПРОБОВАТЬ СНОВА",
+            MinSize = new Vector2(220, 40),
+            HorizontalAlignment = HAlignment.Center,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        retryButton.OnPressed += RequestInventoryData;
+        container.AddChild(retryButton);
+
+        _categoryItemsPanel.AddChild(container);
+    }
+
     private void RequestMainData()
     {
         _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestUpdateDonateShop());
+    }
+
+    private void RequestInventoryData()
+    {
+        _inventoryLoading = true;
+        _inventoryState = null;
+        ShowInventoryLoading();
+        _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestInventory());
     }
 
     private void RequestCalendarData()
@@ -1370,45 +1437,17 @@ public sealed class DonateShopWindow : EmeraldDefaultWindow
         _entManager.EntityNetManager.SendSystemNetworkMessage(new RequestEnergyShopItems());
     }
 
-    private List<DonateItemData> GetAllItems()
-    {
-        if (_state == null)
-            return new List<DonateItemData>();
-
-        var allItems = new List<DonateItemData>(_state.Items);
-
-        foreach (var sub in _state.Subscribes)
-        {
-            foreach (var subItem in sub.Items)
-            {
-                if (allItems.All(i => i.ItemIdInGame != subItem.ItemIdInGame || subItem.ItemIdInGame == null))
-                    allItems.Add(subItem);
-            }
-        }
-
-        return allItems;
-    }
-
     private HashSet<string> GetOwnedItemIds()
     {
         var ownedItemIds = new HashSet<string>();
 
-        if (_state == null)
+        if (_inventoryState == null)
             return ownedItemIds;
 
-        foreach (var item in _state.Items)
+        foreach (var item in _inventoryState.Items)
         {
             if (!string.IsNullOrEmpty(item.ItemIdInGame))
                 ownedItemIds.Add(item.ItemIdInGame);
-        }
-
-        foreach (var sub in _state.Subscribes)
-        {
-            foreach (var subItem in sub.Items)
-            {
-                if (!string.IsNullOrEmpty(subItem.ItemIdInGame))
-                    ownedItemIds.Add(subItem.ItemIdInGame);
-            }
         }
 
         return ownedItemIds;

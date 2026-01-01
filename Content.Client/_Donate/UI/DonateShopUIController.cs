@@ -73,6 +73,11 @@ public sealed class DonateShopUIController : UIController
         _window?.ApplyState(state);
     }
 
+    public void UpdateInventoryState(InventoryState state)
+    {
+        _window?.ApplyInventoryState(state);
+    }
+
     public void UpdateEnergyShopState(EnergyShopState state)
     {
         _window?.ApplyEnergyShopState(state);
